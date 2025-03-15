@@ -24,6 +24,7 @@ import {
   Radio,
   FormControlLabel,
   CircularProgress,
+  InputAdornment,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -31,21 +32,95 @@ import {
   Delete as DeleteIcon,
   Search as SearchIcon,
   Upload as UploadIcon,
+  CheckCircle as CheckCircleIcon,
+  InfoOutlined as InfoOutlinedIcon,
 } from '@mui/icons-material';
 import { styled, useTheme } from '@mui/material/styles';
 import NoData from '../components/NoData';
 import { getSubmissions, createSubmission, updateSubmission, deleteSubmission, getJobs, getRecruiters } from '../services/api';
 
-const SearchBox = styled(Box)(({ theme }) => ({
+const SearchContainer = styled(Box)(({ theme }) => ({
+  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%)',
+  backdropFilter: 'blur(20px)',
+  borderRadius: theme.spacing(2),
+  padding: theme.spacing(2.5),
   display: 'flex',
   gap: theme.spacing(2),
-  marginBottom: theme.spacing(3),
   alignItems: 'center',
-  backgroundColor: 'rgba(255, 255, 255, 0.8)',
-  padding: theme.spacing(2),
-  borderRadius: theme.spacing(2),
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
-  backdropFilter: 'blur(10px)',
+  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.08)',
+  border: '1px solid rgba(231, 235, 240, 0.7)',
+  transition: 'all 0.3s ease',
+  '&:hover': {
+    boxShadow: '0 12px 40px rgba(0, 0, 0, 0.12)',
+    transform: 'translateY(-2px)',
+  },
+}));
+
+const ModernSearchField = styled(TextField)(({ theme }) => ({
+  '& .MuiOutlinedInput-root': {
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: theme.spacing(1.5),
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    height: '46px',
+    '&:hover': {
+      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    },
+    '&.Mui-focused': {
+      backgroundColor: '#ffffff',
+      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
+    },
+    '& fieldset': {
+      borderColor: 'transparent',
+      transition: 'all 0.3s ease',
+    },
+    '&:hover fieldset': {
+      borderColor: 'rgba(59, 130, 246, 0.3)',
+    },
+    '&.Mui-focused fieldset': {
+      borderColor: '#3B82F6',
+      borderWidth: '2px',
+    },
+    '& input': {
+      padding: '12px 16px',
+      fontSize: '0.95rem',
+    },
+  },
+  '& .MuiInputAdornment-root': {
+    marginLeft: theme.spacing(1),
+  },
+}));
+
+const ModernButton = styled(Button)(({ theme, variant = 'contained' }) => ({
+  height: '46px',
+  borderRadius: theme.spacing(1.5),
+  padding: theme.spacing(0, 3),
+  textTransform: 'none',
+  fontSize: '0.95rem',
+  fontWeight: 600,
+  letterSpacing: '0.025em',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  ...(variant === 'contained' && {
+    background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+    color: '#fff',
+    boxShadow: '0 4px 14px rgba(59, 130, 246, 0.25)',
+    '&:hover': {
+      background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
+    },
+  }),
+  '& .MuiButton-startIcon': {
+    marginRight: theme.spacing(1),
+  },
+}));
+
+const SearchIconWrapper = styled(SearchIcon)(({ theme }) => ({
+  color: '#94A3B8',
+  fontSize: '20px',
+  transition: 'color 0.3s ease',
+  '.Mui-focused &': {
+    color: '#3B82F6',
+  },
 }));
 
 const StyledTableContainer = styled(TableContainer)(({ theme }) => ({
@@ -90,29 +165,154 @@ const StyledTableRow = styled(TableRow)(({ theme }) => ({
   },
 }));
 
+const StyledDialog = styled(Dialog)(({ theme }) => ({
+  '& .MuiDialog-paper': {
+    borderRadius: theme.spacing(3),
+    boxShadow: '0 8px 40px rgba(0, 0, 0, 0.12)',
+    background: 'linear-gradient(to bottom, #ffffff, #f8fafc)',
+    overflow: 'hidden',
+  },
+  '& .MuiDialogTitle-root': {
+    padding: theme.spacing(3),
+    background: 'rgba(255, 255, 255, 0.9)',
+    backdropFilter: 'blur(20px)',
+    borderBottom: '1px solid rgba(231, 235, 240, 0.8)',
+  },
+  '& .MuiDialogContent-root': {
+    padding: theme.spacing(3),
+  },
+  '& .MuiDialogActions-root': {
+    padding: theme.spacing(2, 3),
+    background: 'rgba(255, 255, 255, 0.9)',
+    backdropFilter: 'blur(20px)',
+    borderTop: '1px solid rgba(231, 235, 240, 0.8)',
+  },
+}));
+
+const TopFormSection = styled(Box)(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: '1fr auto',
+  gap: theme.spacing(3),
+  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.8) 100%)',
+  borderRadius: theme.spacing(2),
+  padding: theme.spacing(3),
+  marginBottom: theme.spacing(3),
+  border: '1px solid rgba(231, 235, 240, 0.8)',
+  transition: 'all 0.3s ease',
+  '&:hover': {
+    background: 'rgba(255, 255, 255, 0.9)',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  },
+}));
+
+const FormSection = styled(Box)(({ theme }) => ({
+  background: 'rgba(255, 255, 255, 0.5)',
+  borderRadius: theme.spacing(2),
+  padding: theme.spacing(3),
+  marginBottom: theme.spacing(3),
+  border: '1px solid rgba(231, 235, 240, 0.8)',
+  transition: 'all 0.3s ease',
+  '&:hover': {
+    background: 'rgba(255, 255, 255, 0.8)',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  },
+}));
+
 const StyledTextField = styled(TextField)(({ theme }) => ({
   '& .MuiOutlinedInput-root': {
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: theme.spacing(2),
-    transition: 'all 0.3s ease',
+    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     '&:hover': {
-      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+    },
+    '&.Mui-focused': {
+      backgroundColor: '#ffffff',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
     },
     '& fieldset': {
       borderColor: 'rgba(0, 0, 0, 0.1)',
+      transition: 'all 0.3s ease',
     },
     '&:hover fieldset': {
       borderColor: theme.palette.primary.main,
     },
+    '&.Mui-focused fieldset': {
+      borderWidth: '2px',
+    },
+  },
+  '& .MuiInputLabel-root': {
+    transition: 'all 0.3s ease',
+    '&.Mui-focused': {
+      color: theme.palette.primary.main,
+    },
+  },
+  '& .MuiSelect-select': {
+    paddingTop: '12px',
+    paddingBottom: '12px',
   },
 }));
 
-const ActionButton = styled(IconButton)(({ theme }) => ({
+const UploadSection = styled(Box)(({ theme }) => ({
+  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
+  borderRadius: theme.spacing(2),
+  padding: theme.spacing(3),
+  marginBottom: theme.spacing(3),
+  border: '1px solid rgba(59, 130, 246, 0.1)',
   transition: 'all 0.3s ease',
-  padding: theme.spacing(1),
+  color: '#ffffff',
   '&:hover': {
-    transform: 'scale(1.1)',
+    transform: 'translateY(-2px)',
+    boxShadow: '0 8px 24px rgba(59, 130, 246, 0.1)',
   },
+}));
+
+const UploadButton = styled(Button)(({ theme }) => ({
+  borderRadius: theme.spacing(2),
+  padding: theme.spacing(1.5, 3),
+  textTransform: 'none',
+  fontSize: '0.95rem',
+  fontWeight: 500,
+  background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+  color: '#fff',
+  boxShadow: '0 4px 14px rgba(59, 130, 246, 0.25)',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  '&:hover': {
+    background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+    transform: 'translateY(-2px)',
+    boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
+  },
+}));
+
+const ActionButton = styled(Button)(({ theme, variant }) => ({
+  borderRadius: theme.spacing(2),
+  padding: theme.spacing(1.2, 3),
+  textTransform: 'none',
+  fontSize: '0.95rem',
+  fontWeight: 500,
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  ...(variant === 'contained' && {
+    background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+    color: '#fff',
+    boxShadow: '0 4px 14px rgba(59, 130, 246, 0.25)',
+    '&:hover': {
+      background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+      transform: 'translateY(-2px)',
+      boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
+    },
+  }),
+  ...(variant === 'outlined' && {
+    border: '2px solid rgba(59, 130, 246, 0.5)',
+    color: '#3B82F6',
+    '&:hover': {
+      border: '2px solid #3B82F6',
+      background: 'rgba(59, 130, 246, 0.05)',
+      transform: 'translateY(-2px)',
+    },
+  }),
 }));
 
 const StyledStatus = styled(Typography)(({ status, theme }) => ({
@@ -473,9 +673,8 @@ const Submissions = () => {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('job_id', formData.job_id);
 
-      const response = await fetch('http://localhost:5000/api/submissions', {
+      const response = await fetch('http://localhost:5000/api/resumes', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -490,20 +689,18 @@ const Submissions = () => {
 
       const data = await response.json();
       
-      if (data.submission && data.resume) {
+      if (data.id) {
         // Update form data with extracted information
         setFormData(prev => ({
           ...prev,
-          candidate_name: data.resume.name || '',
-          candidate_email: data.resume.email || '',
-          candidate_phone: data.resume.phone_number || '',
-          candidate_city: data.resume.location?.split(',')[0]?.trim() || '',
-          candidate_state: data.resume.location?.split(',')[1]?.trim() || '',
-          candidate_country: data.resume.location?.split(',')[2]?.trim() || '',
-          current_job: data.resume.current_job || '',
-          skills: data.resume.skills || [],
+          candidate_name: data.name || '',
+          candidate_email: data.email || '',
+          candidate_phone: data.phone_number || '',
+          candidate_city: data.location?.split(',')[0]?.trim() || '',
+          candidate_state: data.location?.split(',')[1]?.trim() || '',
+          candidate_country: data.location?.split(',')[2]?.trim() || '',
           status: 'Submitted',
-          resume_id: data.resume.id
+          resume_id: data.id
         }));
         
         setSuccess('Resume processed and details extracted successfully');
@@ -554,38 +751,29 @@ const Submissions = () => {
         </Alert>
       </Snackbar>
 
-      <SearchBox>
-        <StyledTextField
-          label="Search Submissions"
+      <SearchContainer>
+        <ModernSearchField
+          placeholder="Search submissions..."
           variant="outlined"
-          size="small"
+          fullWidth
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
-            startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />,
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIconWrapper />
+              </InputAdornment>
+            ),
           }}
-          sx={{ flexGrow: 1 }}
         />
-        <Button
+        <ModernButton
           variant="contained"
-          color="primary"
           startIcon={<AddIcon />}
           onClick={() => handleOpen()}
-          sx={{
-            borderRadius: 2,
-            px: 3,
-            py: 1,
-            textTransform: 'none',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            '&:hover': {
-              transform: 'translateY(-2px)',
-              boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
-            },
-          }}
         >
           Add Submission
-        </Button>
-      </SearchBox>
+        </ModernButton>
+      </SearchContainer>
 
       {submissions.length === 0 ? (
         <NoData type="submissions" />
@@ -658,191 +846,261 @@ const Submissions = () => {
         </StyledTableContainer>
       )}
 
-      <Dialog 
+      <StyledDialog 
         open={open} 
         onClose={handleClose}
         maxWidth="md" 
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-          },
-        }}
       >
         <DialogTitle>
-          {editMode ? 'Edit Submission' : 'Add New Submission'}
+          <Typography variant="h5" component="h2" sx={{ fontWeight: 600, color: '#1E293B' }}>
+            {editMode ? 'Edit Submission' : 'Add New Submission'}
+          </Typography>
         </DialogTitle>
         <DialogContent>
-        <StyledTextField
-              label="Search by Email"
-              name="searchEmail"
-              value={searchEmail}
-              onChange={(e) => handleEmailSearch(e.target.value)}
-              fullWidth
-              margin="normal"
-              helperText="Enter candidate email to auto-fill details"
-            />
-          <Box component="form" sx={{ 
-            mt: 2,
-            display: 'grid',
-            gap: 2,
-            gridTemplateColumns: 'repeat(2, 1fr)',
-          }}>
-            
-            <StyledTextField
-              select
-              label="Job"
-              name="job_id"
-              value={formData.job_id}
-              onChange={handleChange}
-              required
-              fullWidth
-            >
-              {jobs.map((job) => (
-                <MenuItem key={job.id} value={job.id}>
-                  {job.title}
-                </MenuItem>
-              ))}
-            </StyledTextField>
-            <StyledTextField
-              select
-              label="Recruiter"
-              name="recruiter_id"
-              value={formData.recruiter_id}
-              onChange={handleChange}
-              required
-              fullWidth
-              error={!formData.recruiter_id}
-              helperText={!formData.recruiter_id ? "Please select a recruiter" : ""}
-            >
-              {recruiters.map((recruiter) => (
-                <MenuItem key={recruiter.id} value={recruiter.id}>
-                  {recruiter.name}
-                </MenuItem>
-              ))}
-            </StyledTextField>
-            <StyledTextField
-              label="Candidate Name"
-              name="candidate_name"
-              value={formData.candidate_name}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              label="Candidate Email"
-              name="candidate_email"
-              value={formData.candidate_email}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              label="Candidate Phone"
-              name="candidate_phone"
-              value={formData.candidate_phone}
-              onChange={handleChange}
-              fullWidth
-            />
-            <StyledTextField
-              label="Candidate City"
-              name="candidate_city"
-              value={formData.candidate_city}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              label="Candidate State"
-              name="candidate_state"
-              value={formData.candidate_state}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              label="Candidate Country"
-              name="candidate_country"
-              value={formData.candidate_country}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              label="Visa"
-              name="visa"
-              value={formData.visa}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              label="Pay Rate"
-              name="pay_rate"
-              value={formData.pay_rate}
-              onChange={handleChange}
-              required
-              fullWidth
-            />
-            <StyledTextField
-              select
-              label="Status"
-              name="status"
-              value={formData.status}
-              onChange={handleChange}
-              required
-              fullWidth
-            >
-              <MenuItem value="Submitted">Submitted</MenuItem>
-              <MenuItem value="In Review">In Review</MenuItem>
-              <MenuItem value="Shortlisted">Shortlisted</MenuItem>
-              <MenuItem value="Rejected">Rejected</MenuItem>
-              <MenuItem value="Hired">Hired</MenuItem>
-            </StyledTextField>
-            <StyledTextField
-              label="Notes"
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
-              multiline
-              rows={4}
-              fullWidth
-              sx={{ gridColumn: 'span 2' }}
-            />
-            
-          </Box>
+          {!editMode && (
+            <TopFormSection>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1E293B' }}>
+                  Search Candidate
+                </Typography>
+                <ModernSearchField
+                  placeholder="Enter candidate email..."
+                  name="searchEmail"
+                  value={searchEmail}
+                  onChange={(e) => handleEmailSearch(e.target.value)}
+                  fullWidth
+                  helperText="Enter candidate email to auto-fill details"
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIconWrapper />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Box>
+              <Box sx={{ 
+                borderLeft: '1px solid rgba(231, 235, 240, 0.8)', 
+                pl: 3,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'flex-start',
+                minWidth: '280px',
+              }}>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: '#1E293B' }}>
+                  Upload Resume
+                </Typography>
+                <Box>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={handleResumeUpload}
+                    style={{ display: 'none' }}
+                    id="resume-upload"
+                  />
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 2,
+                    flexWrap: 'wrap',
+                  }}>
+                    <ModernButton
+                      component="label"
+                      htmlFor="resume-upload"
+                      startIcon={<UploadIcon />}
+                      sx={{
+                        minWidth: '160px',
+                        background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+                      }}
+                    >
+                      Choose File
+                    </ModernButton>
+                    {uploading ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <CircularProgress size={20} sx={{ color: '#3B82F6' }} />
+                        <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 500 }}>
+                          Processing...
+                        </Typography>
+                      </Box>
+                    ) : uploadedFileName ? (
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 1,
+                        background: 'rgba(5, 150, 105, 0.1)',
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                      }}>
+                        <CheckCircleIcon sx={{ color: '#059669', fontSize: 20 }} />
+                        <Typography variant="body2" sx={{ color: '#059669', fontWeight: 500 }}>
+                          {uploadedFileName}
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <Typography 
+                        variant="caption" 
+                        sx={{ 
+                          color: '#64748B',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5,
+                        }}
+                      >
+                        <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                        Supported: PDF, DOC, DOCX
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              </Box>
+            </TopFormSection>
+          )}
+
+          <FormSection>
+            <Box component="form" sx={{ 
+              display: 'grid',
+              gap: 3,
+              gridTemplateColumns: 'repeat(2, 1fr)',
+            }}>
+              <StyledTextField
+                select
+                label="Job"
+                name="job_id"
+                value={formData.job_id}
+                onChange={handleChange}
+                required
+                fullWidth
+              >
+                {jobs.map((job) => (
+                  <MenuItem key={job.id} value={job.id}>
+                    {job.title}
+                  </MenuItem>
+                ))}
+              </StyledTextField>
+              <StyledTextField
+                select
+                label="Recruiter"
+                name="recruiter_id"
+                value={formData.recruiter_id}
+                onChange={handleChange}
+                required
+                fullWidth
+                error={!formData.recruiter_id}
+                helperText={!formData.recruiter_id ? "Please select a recruiter" : ""}
+              >
+                {recruiters.map((recruiter) => (
+                  <MenuItem key={recruiter.id} value={recruiter.id}>
+                    {recruiter.name}
+                  </MenuItem>
+                ))}
+              </StyledTextField>
+              <StyledTextField
+                label="Candidate Name"
+                name="candidate_name"
+                value={formData.candidate_name}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                label="Candidate Email"
+                name="candidate_email"
+                value={formData.candidate_email}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                label="Candidate Phone"
+                name="candidate_phone"
+                value={formData.candidate_phone}
+                onChange={handleChange}
+                fullWidth
+              />
+              <StyledTextField
+                label="Candidate City"
+                name="candidate_city"
+                value={formData.candidate_city}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                label="Candidate State"
+                name="candidate_state"
+                value={formData.candidate_state}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                label="Candidate Country"
+                name="candidate_country"
+                value={formData.candidate_country}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                label="Visa"
+                name="visa"
+                value={formData.visa}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                label="Pay Rate"
+                name="pay_rate"
+                value={formData.pay_rate}
+                onChange={handleChange}
+                required
+                fullWidth
+              />
+              <StyledTextField
+                select
+                label="Status"
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                required
+                fullWidth
+              >
+                <MenuItem value="Submitted">Submitted</MenuItem>
+                <MenuItem value="In Review">In Review</MenuItem>
+                <MenuItem value="Shortlisted">Shortlisted</MenuItem>
+                <MenuItem value="Rejected">Rejected</MenuItem>
+                <MenuItem value="Hired">Hired</MenuItem>
+              </StyledTextField>
+              <StyledTextField
+                label="Notes"
+                name="notes"
+                value={formData.notes}
+                onChange={handleChange}
+                multiline
+                rows={4}
+                fullWidth
+                sx={{ gridColumn: 'span 2' }}
+              />
+            </Box>
+          </FormSection>
         </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button 
+        <DialogActions>
+          <ActionButton 
             onClick={handleClose}
-            sx={{
-              borderRadius: 2,
-              px: 3,
-              textTransform: 'none',
-            }}
+            variant="outlined"
           >
             Cancel
-          </Button>
-          <Button 
+          </ActionButton>
+          <ActionButton 
             onClick={handleSubmit} 
-            variant="contained" 
-            color="primary"
-            sx={{
-              borderRadius: 2,
-              px: 3,
-              textTransform: 'none',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
-              },
-            }}
+            variant="contained"
           >
             {editMode ? 'Update' : 'Add'}
-          </Button>
+          </ActionButton>
         </DialogActions>
-      </Dialog>
+      </StyledDialog>
     </Container>
   );
 };
