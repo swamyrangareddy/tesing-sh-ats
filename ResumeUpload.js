@@ -25,7 +25,9 @@ import {
   Chip,
   tableCellClasses,
   Grid,
-  Divider
+  Divider,
+  ToggleButtonGroup,
+  ToggleButton
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -38,7 +40,9 @@ import {
   Work as WorkIcon,
   Business as BusinessIcon,
   CalendarToday as CalendarIcon,
-  Description as DescriptionIcon
+  Description as DescriptionIcon,
+  ViewList as ViewListIcon,
+  ViewModule as ViewModuleIcon
 } from '@mui/icons-material';
 import { styled, useTheme, alpha } from '@mui/material/styles';
 import { getResumes, uploadResume, downloadResume, deleteResume } from '../services/api';
@@ -59,14 +63,29 @@ const VisuallyHiddenInput = styled('input')`
 
 const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
+  flexDirection: 'column',
   gap: theme.spacing(2),
   marginBottom: theme.spacing(3),
-  alignItems: 'center',
   backgroundColor: 'rgba(255, 255, 255, 0.8)',
   padding: theme.spacing(2),
   borderRadius: theme.spacing(2),
   boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
   backdropFilter: 'blur(10px)',
+}));
+
+const TopSection = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  gap: theme.spacing(2),
+  alignItems: 'center',
+  width: '100%'
+}));
+
+const ToggleSection = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  justifyContent: 'center',
+  width: '100%',
+  paddingTop: theme.spacing(1),
+  borderTop: '1px solid rgba(0, 0, 0, 0.1)',
 }));
 
 const StyledTextField = styled(TextField)(({ theme }) => ({
@@ -259,6 +278,22 @@ const ExperienceCard = styled(Paper)(({ theme }) => ({
   }
 }));
 
+const ViewToggleButton = styled(ToggleButton)(({ theme }) => ({
+  padding: theme.spacing(1, 3),
+  textTransform: 'none',
+  borderRadius: theme.spacing(1),
+  '&.Mui-selected': {
+    backgroundColor: theme.palette.primary.main,
+    color: '#fff',
+    '&:hover': {
+      backgroundColor: theme.palette.primary.dark,
+    }
+  },
+  '&:hover': {
+    backgroundColor: theme.palette.action.hover,
+  }
+}));
+
 const ResumeUpload = () => {
   const navigate = useNavigate();
   const { token, logout } = useAuth();
@@ -274,23 +309,28 @@ const ResumeUpload = () => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [downloadingResume, setDownloadingResume] = useState(null);
   const [openDownloadDialog, setOpenDownloadDialog] = useState(false);
+  const [viewMode, setViewMode] = useState('extracted');
+  const [sessionUploads, setSessionUploads] = useState([]);
+  const [allResumes, setAllResumes] = useState([]);
 
   useEffect(() => {
-    fetchResumes();
+    fetchAllResumes();
   }, []);
 
   useEffect(() => {
     filterResumes();
-  }, [searchQuery, resumes]);
+  }, [searchQuery, sessionUploads, allResumes, viewMode]);
 
   const filterResumes = () => {
+    const sourceData = viewMode === 'extracted' ? sessionUploads : allResumes;
+    
     if (!searchQuery.trim()) {
-      setFilteredResumes(resumes);
+      setFilteredResumes(sourceData);
       return;
     }
 
     const query = searchQuery.toLowerCase();
-    const filtered = resumes.filter(resume => {
+    const filtered = sourceData.filter(resume => {
       return (
         (resume.name && resume.name.toLowerCase().includes(query)) ||
         (resume.email && resume.email.toLowerCase().includes(query)) ||
@@ -302,11 +342,12 @@ const ResumeUpload = () => {
     setFilteredResumes(filtered);
   };
 
-  const fetchResumes = async () => {
+  const fetchAllResumes = async () => {
     try {
       setLoading(true);
       const data = await getResumes();
-      setResumes(data.resumes || []);
+      setAllResumes(data.resumes || []);
+      setFilteredResumes(viewMode === 'extracted' ? sessionUploads : (data.resumes || []));
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -345,7 +386,7 @@ const ResumeUpload = () => {
 
         try {
           const response = await uploadResume(formData);
-          return { success: true, file: file.name, message: response.message };
+          return { success: true, file: file.name, data: response.data };
         } catch (err) {
           return { success: false, file: file.name, error: err.message };
         }
@@ -356,18 +397,21 @@ const ResumeUpload = () => {
       const failed = results.filter(r => !r.success);
 
       if (successful.length > 0) {
+        // Add successful uploads to session uploads
+        const newUploads = successful.map(r => r.data);
+        setSessionUploads(prev => [...prev, ...newUploads]);
         showSnackbar(`Successfully uploaded ${successful.length} resume(s)`, 'success');
       }
       if (failed.length > 0) {
         showSnackbar(`Failed to upload ${failed.length} resume(s): ${failed.map(f => f.file).join(', ')}`, 'error');
       }
 
-      await fetchResumes();
+      await fetchAllResumes();
     } catch (err) {
       showSnackbar('An error occurred while uploading resumes', 'error');
     } finally {
       setLoading(false);
-      event.target.value = ''; // Reset the file input
+      event.target.value = '';
     }
   };
 
@@ -458,7 +502,7 @@ const ResumeUpload = () => {
     try {
       await deleteResume(resume._id);
       showSnackbar('Resume deleted successfully', 'success');
-      await fetchResumes();
+      await fetchAllResumes();
       if (selectedResume?._id === resume._id) {
         setOpenDialog(false);
       }
@@ -614,45 +658,78 @@ const ResumeUpload = () => {
     );
   };
 
+  const handleViewModeChange = (event, newValue) => {
+    if (newValue) {
+      setViewMode(newValue);
+      setFilteredResumes(newValue === 'extracted' ? sessionUploads : allResumes);
+    }
+  };
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <SearchBox>
-        
-        <StyledTextField
-          label="Search resumes..."
-          variant="outlined"
-          size="small"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          InputProps={{
-            startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />,
-          }}
-        />
-        <Button
-          component="label"
-          variant="contained"
-          startIcon={<UploadIcon />}
-          disabled={loading}
-          sx={{
-            borderRadius: 2,
-            px: 3,
-            py: 1,
-            textTransform: 'none',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            '&:hover': {
-              transform: 'translateY(-2px)',
-              boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
-            },
-          }}
-        >
-          Upload Resume
-          <VisuallyHiddenInput 
-            type="file" 
-            onChange={handleFileUpload} 
-            accept=".pdf,.doc,.docx" 
-            multiple 
+        <TopSection>
+          <StyledTextField
+            label="Search resumes..."
+            variant="outlined"
+            size="small"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />,
+            }}
           />
-        </Button>
+          <Button
+            component="label"
+            variant="contained"
+            startIcon={<UploadIcon />}
+            disabled={loading}
+            sx={{
+              borderRadius: 2,
+              px: 3,
+              py: 1,
+              textTransform: 'none',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
+              },
+            }}
+          >
+            Upload Resume
+            <VisuallyHiddenInput 
+              type="file" 
+              onChange={handleFileUpload} 
+              accept=".pdf,.doc,.docx" 
+              multiple 
+            />
+          </Button>
+        </TopSection>
+        <ToggleSection>
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={handleViewModeChange}
+            sx={{ 
+              backgroundColor: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              borderRadius: 2,
+              '& .MuiToggleButton-root': {
+                px: 4,
+                py: 1,
+              }
+            }}
+          >
+            <ViewToggleButton value="extracted">
+              <ViewListIcon sx={{ mr: 1 }} />
+              Extract Details
+            </ViewToggleButton>
+            <ViewToggleButton value="full">
+              <ViewModuleIcon sx={{ mr: 1 }} />
+              Full Resumes
+            </ViewToggleButton>
+          </ToggleButtonGroup>
+        </ToggleSection>
       </SearchBox>
 
       <StyledTableContainer component={Paper}>
@@ -672,58 +749,109 @@ const ResumeUpload = () => {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
-                <StyledTableCell sx={{ width: '20%' }}>Email</StyledTableCell>
-                <StyledTableCell sx={{ width: '15%' }}>Job Title</StyledTableCell>
-                <StyledTableCell sx={{ width: '15%' }}>Location</StyledTableCell>
-                <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>Skills</StyledTableCell>
-                <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
+                {viewMode === 'extracted' ? (
+                  <>
+                    <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
+                    <StyledTableCell sx={{ width: '20%' }}>Email</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Job Title</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Location</StyledTableCell>
+                    <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>Skills</StyledTableCell>
+                    <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
+                  </>
+                ) : (
+                  <>
+                    <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Email</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Phone</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Experience</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Education</StyledTableCell>
+                    <StyledTableCell sx={{ width: '15%' }}>Resume File</StyledTableCell>
+                    <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
+                  </>
+                )}
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredResumes.map((resume) => (
                 <StyledTableRow key={resume._id}>
-                  <StyledTableCell sx={{ width: '15%' }}>
-                    <Typography 
-                      className="cell-content" 
-                      onClick={() => handleView(resume)}
-                    >
-                      {resume.name || '-'}
-                    </Typography>
-                  </StyledTableCell>
-                  <StyledTableCell sx={{ width: '20%' }}>
-                    <Typography 
-                      className="cell-content"
-                      onClick={() => handleView(resume)}
-                    >
-                      {resume.email || '-'}
-                    </Typography>
-                  </StyledTableCell>
-                  <StyledTableCell sx={{ width: '15%' }}>
-                    <Typography 
-                      className="cell-content"
-                      onClick={() => handleView(resume)}
-                    >
-                      {resume.job_title || '-'}
-                    </Typography>
-                  </StyledTableCell>
-                  <StyledTableCell sx={{ width: '15%' }}>
-                    <Typography 
-                      className="cell-content"
-                      onClick={() => handleView(resume)}
-                    >
-                      {resume.location || '-'}
-                    </Typography>
-                  </StyledTableCell>
-                  <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>
-                    <StyledSkillsContainer>
-                      {resume.skills ? renderSkills(resume.skills) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ p: 0.5 }}>
-                          No skills listed
+                  {viewMode === 'extracted' ? (
+                    <>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography 
+                          className="cell-content" 
+                          onClick={() => handleView(resume)}
+                        >
+                          {resume.name || '-'}
                         </Typography>
-                      )}
-                    </StyledSkillsContainer>
-                  </StyledTableCell>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '20%' }}>
+                        <Typography 
+                          className="cell-content"
+                          onClick={() => handleView(resume)}
+                        >
+                          {resume.email || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography 
+                          className="cell-content"
+                          onClick={() => handleView(resume)}
+                        >
+                          {resume.job_title || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography 
+                          className="cell-content"
+                          onClick={() => handleView(resume)}
+                        >
+                          {resume.location || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>
+                        <StyledSkillsContainer>
+                          {resume.skills ? renderSkills(resume.skills) : (
+                            <Typography variant="body2" color="text.secondary" sx={{ p: 0.5 }}>
+                              No skills listed
+                            </Typography>
+                          )}
+                        </StyledSkillsContainer>
+                      </StyledTableCell>
+                    </>
+                  ) : (
+                    <>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography className="cell-content">
+                          {resume.name || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography className="cell-content">
+                          {resume.email || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography className="cell-content">
+                          {resume.phone_number || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography className="cell-content">
+                          {resume.experience?.length ? `${resume.experience.length} positions` : '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography className="cell-content">
+                          {resume.education || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                      <StyledTableCell sx={{ width: '15%' }}>
+                        <Typography className="cell-content">
+                          {resume.filename || '-'}
+                        </Typography>
+                      </StyledTableCell>
+                    </>
+                  )}
                   <StyledTableCell align="right" sx={{ width: '10%' }}>
                     <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                       <Tooltip title="View Details" arrow>
@@ -777,7 +905,7 @@ const ResumeUpload = () => {
               ))}
               {filteredResumes.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={viewMode === 'extracted' ? 6 : 7} align="center" sx={{ py: 8 }}>
                     <Box sx={{ 
                       display: 'flex', 
                       flexDirection: 'column', 
@@ -791,12 +919,20 @@ const ResumeUpload = () => {
                         mb: 1
                       }} />
                       <Typography variant="h6" color="text.secondary">
-                        {searchQuery ? 'No matching resumes found' : 'No resumes uploaded yet'}
+                        {searchQuery 
+                          ? 'No matching resumes found' 
+                          : viewMode === 'extracted' 
+                            ? 'No resumes uploaded in this session' 
+                            : 'No resumes in the database'}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {searchQuery ? 'Try adjusting your search terms' : 'Upload your first resume to get started'}
+                        {searchQuery 
+                          ? 'Try adjusting your search terms' 
+                          : viewMode === 'extracted'
+                            ? 'Upload a resume to see extracted details'
+                            : 'Upload some resumes to populate the database'}
                       </Typography>
-                      {!searchQuery && (
+                      {!searchQuery && viewMode === 'extracted' && (
                         <Button
                           component="label"
                           variant="contained"
