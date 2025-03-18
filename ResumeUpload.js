@@ -19,6 +19,7 @@ import {
   TextField,
   Stack,
   CircularProgress,
+  LinearProgress,
   Alert,
   Snackbar,
   Tooltip,
@@ -27,7 +28,10 @@ import {
   Grid,
   Divider,
   ToggleButtonGroup,
-  ToggleButton
+  ToggleButton,
+  Backdrop,
+  Fade,
+  Checkbox
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -42,7 +46,8 @@ import {
   CalendarToday as CalendarIcon,
   Description as DescriptionIcon,
   ViewList as ViewListIcon,
-  ViewModule as ViewModuleIcon
+  ViewModule as ViewModuleIcon,
+  Check as CheckIcon
 } from '@mui/icons-material';
 import { styled, useTheme, alpha } from '@mui/material/styles';
 import { getResumes, uploadResume, downloadResume, deleteResume } from '../services/api';
@@ -294,6 +299,32 @@ const ViewToggleButton = styled(ToggleButton)(({ theme }) => ({
   }
 }));
 
+const UploadProgress = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(2),
+  borderRadius: theme.spacing(2),
+  maxWidth: 300,
+  width: '100%',
+  backgroundColor: theme.palette.background.default,
+  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  backdropFilter: 'blur(10px)',
+}));
+
+const StyledUploadIcon = styled('div')({
+  fontSize: '48px',
+  marginBottom: 16,
+  color: 'primary.main',
+});
+
+const StyledLinearProgress = styled(LinearProgress)(({ theme }) => ({
+  height: 10,
+  borderRadius: 5,
+  backgroundColor: theme.palette.grey[200],
+  '& .MuiLinearProgress-bar': {
+    borderRadius: 5,
+    backgroundColor: theme.palette.primary.main,
+  },
+}));
+
 const ResumeUpload = () => {
   const navigate = useNavigate();
   const { token, logout } = useAuth();
@@ -309,20 +340,37 @@ const ResumeUpload = () => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [downloadingResume, setDownloadingResume] = useState(null);
   const [openDownloadDialog, setOpenDownloadDialog] = useState(false);
-  const [viewMode, setViewMode] = useState('extracted');
   const [sessionUploads, setSessionUploads] = useState([]);
   const [allResumes, setAllResumes] = useState([]);
+  const [uploadStats, setUploadStats] = useState({
+    total: 0,
+    successful: 0,
+    failed: 0,
+    retrying: 0,
+    completed: 0
+  });
+  const [showUploadProgress, setShowUploadProgress] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFiles, setUploadingFiles] = useState([]);
+  const [selectedResumes, setSelectedResumes] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
 
   useEffect(() => {
+    // Check for authentication
+    if (!token) {
+      navigate('/login');
+      return;
+    }
     fetchAllResumes();
-  }, []);
+  }, [token, navigate]);
 
   useEffect(() => {
     filterResumes();
-  }, [searchQuery, sessionUploads, allResumes, viewMode]);
+  }, [searchQuery, sessionUploads, allResumes]);
 
   const filterResumes = () => {
-    const sourceData = viewMode === 'extracted' ? sessionUploads : allResumes;
+    const sourceData = allResumes;
     
     if (!searchQuery.trim()) {
       setFilteredResumes(sourceData);
@@ -347,11 +395,16 @@ const ResumeUpload = () => {
       setLoading(true);
       const data = await getResumes();
       setAllResumes(data.resumes || []);
-      setFilteredResumes(viewMode === 'extracted' ? sessionUploads : (data.resumes || []));
+      setFilteredResumes(data.resumes || []);
       setError(null);
     } catch (err) {
-      setError(err.message);
-      showSnackbar(err.message, 'error');
+      if (err.message === 'Session expired. Please login again.') {
+        logout();
+        navigate('/login');
+      } else {
+        setError(err.message);
+        showSnackbar(err.message, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -360,6 +413,12 @@ const ResumeUpload = () => {
   const handleFileUpload = async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
+
+    if (files.length > 50) {
+      showSnackbar('Maximum 50 resumes can be uploaded at once. Please reduce the number of files.', 'error');
+      event.target.value = '';
+      return;
+    }
 
     const validTypes = ['.pdf', '.doc', '.docx'];
     const invalidFiles = [];
@@ -380,15 +439,60 @@ const ResumeUpload = () => {
 
     try {
       setLoading(true);
+      setShowUploadProgress(true);
+      setUploadingFiles(Array.from(files).map(f => f.name));
+      
+      // Initialize upload stats
+      setUploadStats({
+        total: files.length,
+        successful: 0,
+        failed: 0,
+        retrying: 0,
+        completed: 0
+      });
+
       const uploadPromises = Array.from(files).map(async (file) => {
         const formData = new FormData();
         formData.append('file', file);
 
         try {
           const response = await uploadResume(formData);
-          return { success: true, file: file.name, data: response.data };
+          const data = response.data;
+
+          // Update stats based on response
+          setUploadStats(prev => {
+            const completed = prev.completed + 1;
+            const successful = prev.successful + (data.status === 'success' ? 1 : 0);
+            const failed = prev.failed + (data.status === 'error' ? 1 : 0);
+            
+            return {
+              ...prev,
+              successful,
+              failed,
+              completed,
+              retrying: data.retries || 0
+            };
+          });
+
+          // Update progress
+          setUploadProgress((prev) => {
+            const newProgress = (uploadStats.completed / files.length) * 100;
+            return Math.min(newProgress, 100);
+          });
+
+          return {
+            success: data.status === 'success',
+            file: file.name,
+            data: data,
+            error: data.error
+          };
         } catch (err) {
-          return { success: false, file: file.name, error: err.message };
+          setUploadStats(prev => ({
+            ...prev,
+            failed: prev.failed + 1,
+            completed: prev.completed + 1
+          }));
+          return { success: false, file: file.name, error: 'upload_failed' };
         }
       });
 
@@ -396,15 +500,25 @@ const ResumeUpload = () => {
       const successful = results.filter(r => r.success);
       const failed = results.filter(r => !r.success);
 
-      if (successful.length > 0) {
+      // Keep progress dialog visible for a moment to show final stats
+      setTimeout(() => {
+        setShowUploadProgress(false);
+        setUploadProgress(0);
+        setUploadingFiles([]);
+        
+        // Show summary in snackbar
+        const message = `Processed ${files.length} resumes:
+          • ${successful.length} successful
+          • ${failed.length} failed
+          • ${uploadStats.retrying} required retries`;
+        showSnackbar(message, successful.length > 0 ? 'success' : 'warning');
+        
         // Add successful uploads to session uploads
-        const newUploads = successful.map(r => r.data);
-        setSessionUploads(prev => [...prev, ...newUploads]);
-        showSnackbar(`Successfully uploaded ${successful.length} resume(s)`, 'success');
-      }
-      if (failed.length > 0) {
-        showSnackbar(`Failed to upload ${failed.length} resume(s): ${failed.map(f => f.file).join(', ')}`, 'error');
-      }
+        if (successful.length > 0) {
+          const newUploads = successful.map(r => r.data);
+          setSessionUploads(prev => [...prev, ...newUploads]);
+        }
+      }, 2000);
 
       await fetchAllResumes();
     } catch (err) {
@@ -537,11 +651,31 @@ const ResumeUpload = () => {
   };
 
   const renderSkills = (skills) => {
-    if (!skills) return null;
-    return skills.split(',').map((skill, idx) => (
+    if (!skills) return (
+      <Typography variant="body2" color="text.secondary" sx={{ p: 0.5 }}>
+        N/A
+      </Typography>
+    );
+
+    // Handle both string and array formats
+    const skillsArray = Array.isArray(skills) 
+      ? skills 
+      : typeof skills === 'string' 
+        ? skills.split(',')
+        : [];
+
+    if (skillsArray.length === 0) {
+      return (
+        <Typography variant="body2" color="text.secondary" sx={{ p: 0.5 }}>
+          N/A
+        </Typography>
+      );
+    }
+
+    return skillsArray.map((skill, idx) => (
       <StyledSkillChip
         key={idx}
-        label={skill.trim()}
+        label={typeof skill === 'string' ? skill.trim() : 'N/A'}
         size="small"
       />
     ));
@@ -658,10 +792,62 @@ const ResumeUpload = () => {
     );
   };
 
-  const handleViewModeChange = (event, newValue) => {
-    if (newValue) {
-      setViewMode(newValue);
-      setFilteredResumes(newValue === 'extracted' ? sessionUploads : allResumes);
+  // Add new function for handling checkbox selection
+  const handleCheckboxChange = (resumeId) => {
+    setSelectedResumes(prev => {
+      if (prev.includes(resumeId)) {
+        return prev.filter(id => id !== resumeId);
+      } else {
+        return [...prev, resumeId];
+      }
+    });
+  };
+
+  // Add new function for handling select all
+  const handleSelectAll = (event) => {
+    if (event.target.checked) {
+      setSelectedResumes(filteredResumes.map(resume => resume._id));
+    } else {
+      setSelectedResumes([]);
+    }
+  };
+
+  // Add new function for batch processing
+  const handleBatchProcess = async () => {
+    if (selectedResumes.length === 0) {
+      showSnackbar('Please select resumes to process', 'warning');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setProcessingProgress(0);
+
+      for (let i = 0; i < selectedResumes.length; i++) {
+        const resumeId = selectedResumes[i];
+        const response = await fetch(`http://localhost:5000/api/resumes/${resumeId}/reprocess`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to process resume ${resumeId}`);
+        }
+
+        setProcessingProgress(((i + 1) / selectedResumes.length) * 100);
+      }
+
+      showSnackbar('Successfully reprocessed selected resumes', 'success');
+      fetchAllResumes(); // Refresh the list
+      setSelectedResumes([]); // Clear selection
+    } catch (error) {
+      showSnackbar(error.message, 'error');
+    } finally {
+      setIsProcessing(false);
+      setProcessingProgress(0);
     }
   };
 
@@ -705,31 +891,26 @@ const ResumeUpload = () => {
             />
           </Button>
         </TopSection>
-        <ToggleSection>
-          <ToggleButtonGroup
-            value={viewMode}
-            exclusive
-            onChange={handleViewModeChange}
-            sx={{ 
-              backgroundColor: 'white',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              borderRadius: 2,
-              '& .MuiToggleButton-root': {
-                px: 4,
-                py: 1,
-              }
-            }}
-          >
-            <ViewToggleButton value="extracted">
-              <ViewListIcon sx={{ mr: 1 }} />
-              Extract Details
-            </ViewToggleButton>
-            <ViewToggleButton value="full">
-              <ViewModuleIcon sx={{ mr: 1 }} />
-              Full Resumes
-            </ViewToggleButton>
-          </ToggleButtonGroup>
-        </ToggleSection>
+
+        {/* Add Batch Processing Button */}
+        {selectedResumes.length > 0 && (
+          <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={handleBatchProcess}
+              disabled={isProcessing}
+              startIcon={isProcessing ? <CircularProgress size={20} /> : null}
+            >
+              Reprocess {selectedResumes.length} Selected Resume{selectedResumes.length > 1 ? 's' : ''}
+            </Button>
+            {isProcessing && (
+              <Box sx={{ flexGrow: 1, ml: 2 }}>
+                <LinearProgress variant="determinate" value={processingProgress} />
+              </Box>
+            )}
+          </Box>
+        )}
       </SearchBox>
 
       <StyledTableContainer component={Paper}>
@@ -749,109 +930,73 @@ const ResumeUpload = () => {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                {viewMode === 'extracted' ? (
-                  <>
-                    <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
-                    <StyledTableCell sx={{ width: '20%' }}>Email</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Job Title</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Location</StyledTableCell>
-                    <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>Skills</StyledTableCell>
-                    <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
-                  </>
-                ) : (
-                  <>
-                    <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Email</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Phone</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Experience</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Education</StyledTableCell>
-                    <StyledTableCell sx={{ width: '15%' }}>Resume File</StyledTableCell>
-                    <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
-                  </>
-                )}
+                <StyledTableCell padding="checkbox">
+                  <Checkbox
+                    color="primary"
+                    indeterminate={selectedResumes.length > 0 && selectedResumes.length < filteredResumes.length}
+                    checked={selectedResumes.length > 0 && selectedResumes.length === filteredResumes.length}
+                    onChange={handleSelectAll}
+                  />
+                </StyledTableCell>
+                <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
+                <StyledTableCell sx={{ width: '20%' }}>Email</StyledTableCell>
+                <StyledTableCell sx={{ width: '15%' }}>Job Title</StyledTableCell>
+                <StyledTableCell sx={{ width: '15%' }}>Location</StyledTableCell>
+                <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>Skills</StyledTableCell>
+                <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredResumes.map((resume) => (
-                <StyledTableRow key={resume._id}>
-                  {viewMode === 'extracted' ? (
-                    <>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography 
-                          className="cell-content" 
-                          onClick={() => handleView(resume)}
-                        >
-                          {resume.name || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '20%' }}>
-                        <Typography 
-                          className="cell-content"
-                          onClick={() => handleView(resume)}
-                        >
-                          {resume.email || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography 
-                          className="cell-content"
-                          onClick={() => handleView(resume)}
-                        >
-                          {resume.job_title || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography 
-                          className="cell-content"
-                          onClick={() => handleView(resume)}
-                        >
-                          {resume.location || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>
-                        <StyledSkillsContainer>
-                          {resume.skills ? renderSkills(resume.skills) : (
-                            <Typography variant="body2" color="text.secondary" sx={{ p: 0.5 }}>
-                              No skills listed
-                            </Typography>
-                          )}
-                        </StyledSkillsContainer>
-                      </StyledTableCell>
-                    </>
-                  ) : (
-                    <>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography className="cell-content">
-                          {resume.name || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography className="cell-content">
-                          {resume.email || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography className="cell-content">
-                          {resume.phone_number || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography className="cell-content">
-                          {resume.experience?.length ? `${resume.experience.length} positions` : '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography className="cell-content">
-                          {resume.education || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                      <StyledTableCell sx={{ width: '15%' }}>
-                        <Typography className="cell-content">
-                          {resume.filename || '-'}
-                        </Typography>
-                      </StyledTableCell>
-                    </>
-                  )}
+                <StyledTableRow 
+                  key={resume._id}
+                  selected={selectedResumes.includes(resume._id)}
+                  hover
+                >
+                  <StyledTableCell padding="checkbox">
+                    <Checkbox
+                      color="primary"
+                      checked={selectedResumes.includes(resume._id)}
+                      onChange={() => handleCheckboxChange(resume._id)}
+                    />
+                  </StyledTableCell>
+                  <StyledTableCell sx={{ width: '15%' }}>
+                    <Typography 
+                      className="cell-content" 
+                      onClick={() => handleView(resume)}
+                    >
+                      {resume.name || 'N/A'}
+                    </Typography>
+                  </StyledTableCell>
+                  <StyledTableCell sx={{ width: '20%' }}>
+                    <Typography 
+                      className="cell-content"
+                      onClick={() => handleView(resume)}
+                    >
+                      {resume.email || 'N/A'}
+                    </Typography>
+                  </StyledTableCell>
+                  <StyledTableCell sx={{ width: '15%' }}>
+                    <Typography 
+                      className="cell-content"
+                      onClick={() => handleView(resume)}
+                    >
+                      {resume.job_title || 'N/A'}
+                    </Typography>
+                  </StyledTableCell>
+                  <StyledTableCell sx={{ width: '15%' }}>
+                    <Typography 
+                      className="cell-content"
+                      onClick={() => handleView(resume)}
+                    >
+                      {resume.location || 'N/A'}
+                    </Typography>
+                  </StyledTableCell>
+                  <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>
+                    <StyledSkillsContainer>
+                      {renderSkills(resume.skills)}
+                    </StyledSkillsContainer>
+                  </StyledTableCell>
                   <StyledTableCell align="right" sx={{ width: '10%' }}>
                     <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                       <Tooltip title="View Details" arrow>
@@ -905,7 +1050,7 @@ const ResumeUpload = () => {
               ))}
               {filteredResumes.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={viewMode === 'extracted' ? 6 : 7} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                     <Box sx={{ 
                       display: 'flex', 
                       flexDirection: 'column', 
@@ -921,18 +1066,14 @@ const ResumeUpload = () => {
                       <Typography variant="h6" color="text.secondary">
                         {searchQuery 
                           ? 'No matching resumes found' 
-                          : viewMode === 'extracted' 
-                            ? 'No resumes uploaded in this session' 
-                            : 'No resumes in the database'}
+                          : 'No resumes in the database'}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {searchQuery 
                           ? 'Try adjusting your search terms' 
-                          : viewMode === 'extracted'
-                            ? 'Upload a resume to see extracted details'
-                            : 'Upload some resumes to populate the database'}
+                          : 'Upload some resumes to populate the database'}
                       </Typography>
-                      {!searchQuery && viewMode === 'extracted' && (
+                      {!searchQuery && (
                         <Button
                           component="label"
                           variant="contained"
@@ -1044,6 +1185,65 @@ const ResumeUpload = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Backdrop
+        open={showUploadProgress}
+        sx={{ 
+          color: '#fff', 
+          zIndex: 1300,
+          backgroundColor: 'rgba(0, 0, 0, 0.8)' 
+        }}
+      >
+        <Fade in={showUploadProgress}>
+          <UploadProgress>
+            <StyledUploadIcon>
+              {uploadProgress === 100 ? <CheckIcon /> : <UploadIcon />}
+            </StyledUploadIcon>
+            <Typography variant="h6" gutterBottom>
+              {uploadProgress === 100 ? 'Upload Complete!' : 'Uploading Resumes...'}
+            </Typography>
+            <StyledLinearProgress 
+              variant="determinate" 
+              value={uploadProgress} 
+            />
+            <Typography variant="body2" color="text.secondary">
+              Processing {uploadStats.completed} of {uploadStats.total} files
+            </Typography>
+            <Box sx={{ mt: 2, textAlign: 'left' }}>
+              <Typography variant="body2" color="success.main">
+                Successful: {uploadStats.successful}
+              </Typography>
+              <Typography variant="body2" color="error.main">
+                Failed: {uploadStats.failed}
+              </Typography>
+              {uploadStats.retrying > 0 && (
+                <Typography variant="body2" color="warning.main">
+                  Retrying: {uploadStats.retrying}
+                </Typography>
+              )}
+            </Box>
+            {uploadingFiles.length > 0 && uploadProgress < 100 && (
+              <Box sx={{ mt: 2, maxHeight: 100, overflowY: 'auto' }}>
+                {uploadingFiles.map((file, index) => (
+                  <Typography 
+                    key={index} 
+                    variant="caption" 
+                    display="block" 
+                    color="text.secondary"
+                    sx={{ 
+                      textOverflow: 'ellipsis',
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {file}
+                  </Typography>
+                ))}
+              </Box>
+            )}
+          </UploadProgress>
+        </Fade>
+      </Backdrop>
 
       <Snackbar
         open={snackbar.open}

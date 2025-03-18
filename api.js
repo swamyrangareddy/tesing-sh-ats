@@ -1,4 +1,22 @@
-const API_URL = 'http://localhost:5000/api';
+import axios from 'axios';
+
+const API_BASE_URL = 'http://localhost:5000/api';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add request interceptor to include token in all requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 // Helper function to get auth headers
 const getAuthHeaders = () => {
@@ -16,7 +34,7 @@ const getToken = () => {
 // Test the backend connection
 const testConnection = async () => {
   try {
-    const response = await fetch(`${API_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/health`);
     const data = await response.json();
     console.log('Backend connection test:', data.status);
     return data.status === 'healthy';
@@ -42,7 +60,7 @@ const handleResponse = async (response) => {
 // Auth functions
 export const signup = async (userData) => {
   try {
-    const response = await fetch(`${API_URL}/auth/signup`, {
+    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -59,7 +77,7 @@ export const signup = async (userData) => {
 
 export const login = async (username, password) => {
   try {
-    const response = await fetch(`${API_URL}/auth/login`, {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -106,7 +124,7 @@ export const isAuthenticated = () => {
 // Profile function
 export const getUserProfile = async () => {
   try {
-    const response = await fetch(`${API_URL}/user/profile`, {
+    const response = await fetch(`${API_BASE_URL}/user/profile`, {
       headers: getAuthHeaders()
     });
     return handleResponse(response);
@@ -119,7 +137,7 @@ export const getUserProfile = async () => {
 // Recruiter functions
 export const getRecruiters = async () => {
   try {
-    const response = await fetch(`${API_URL}/recruiters`, {
+    const response = await fetch(`${API_BASE_URL}/recruiters`, {
       headers: getAuthHeaders()
     });
     return handleResponse(response);
@@ -131,7 +149,7 @@ export const getRecruiters = async () => {
 
 export const createRecruiter = async (recruiterData) => {
   try {
-    const response = await fetch(`${API_URL}/recruiters`, {
+    const response = await fetch(`${API_BASE_URL}/recruiters`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(recruiterData),
@@ -145,7 +163,7 @@ export const createRecruiter = async (recruiterData) => {
 
 export const updateRecruiter = async (id, recruiterData) => {
   try {
-    const response = await fetch(`${API_URL}/recruiters/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/recruiters/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(recruiterData),
@@ -159,7 +177,7 @@ export const updateRecruiter = async (id, recruiterData) => {
 
 export const deleteRecruiter = async (id) => {
   try {
-    const response = await fetch(`${API_URL}/recruiters/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/recruiters/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -173,7 +191,7 @@ export const deleteRecruiter = async (id) => {
 // Job functions
 export const getJobs = async () => {
   try {
-    const response = await fetch(`${API_URL}/jobs`, {
+    const response = await fetch(`${API_BASE_URL}/jobs`, {
       headers: getAuthHeaders()
     });
     return handleResponse(response);
@@ -185,7 +203,7 @@ export const getJobs = async () => {
 
 export const createJob = async (jobData) => {
   try {
-    const response = await fetch(`${API_URL}/jobs`, {
+    const response = await fetch(`${API_BASE_URL}/jobs`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(jobData),
@@ -199,7 +217,7 @@ export const createJob = async (jobData) => {
 
 export const updateJob = async (id, jobData) => {
   try {
-    const response = await fetch(`${API_URL}/jobs/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/jobs/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(jobData),
@@ -213,7 +231,7 @@ export const updateJob = async (id, jobData) => {
 
 export const deleteJob = async (id) => {
   try {
-    const response = await fetch(`${API_URL}/jobs/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/jobs/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -227,7 +245,7 @@ export const deleteJob = async (id) => {
 // Submission functions
 export const getSubmissions = async () => {
   try {
-    const response = await fetch(`${API_URL}/submissions`, {
+    const response = await fetch(`${API_BASE_URL}/submissions`, {
       headers: getAuthHeaders()
     });
     return handleResponse(response);
@@ -247,7 +265,7 @@ export const createSubmission = async (submissionData) => {
       formData.append(key, submissionData[key]);
     });
     
-    const response = await fetch(`${API_URL}/submissions`, {
+    const response = await fetch(`${API_BASE_URL}/submissions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -269,7 +287,7 @@ export const createSubmission = async (submissionData) => {
 
 export const updateSubmission = async (id, submissionData) => {
   try {
-    const response = await fetch(`${API_URL}/submissions/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/submissions/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -292,7 +310,7 @@ export const updateSubmission = async (id, submissionData) => {
 
 export const deleteSubmission = async (id) => {
   try {
-    const response = await fetch(`${API_URL}/submissions/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/submissions/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
@@ -306,48 +324,31 @@ export const deleteSubmission = async (id) => {
 // Resume API endpoints
 export const uploadResume = async (formData) => {
   try {
-    const response = await fetch(`${API_URL}/resumes`, {
-      method: 'POST',
+    const token = localStorage.getItem('token');
+    const response = await axios.post(`${API_BASE_URL}/resumes`, formData, {
       headers: {
-        'Authorization': `Bearer ${getToken()}`
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'multipart/form-data',
       },
-      body: formData
     });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to upload resume');
-    }
-    
-    return await response.json();
+    return response;
   } catch (error) {
-    throw error;
+    throw handleError(error);
   }
 };
 
 export const getResumes = async () => {
   try {
-    const response = await fetch(`${API_URL}/resumes`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${getToken()}`
-      }
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch resumes');
-    }
-    
-    return await response.json();
+    const response = await api.get('/resumes');
+    return response.data;
   } catch (error) {
-    throw error;
+    throw handleError(error);
   }
 };
 
 export const previewResume = async (resumeId) => {
   try {
-    const response = await fetch(`${API_URL}/resumes/${resumeId}/preview`, {
+    const response = await fetch(`${API_BASE_URL}/resumes/${resumeId}/preview`, {
       headers: {
         'Authorization': `Bearer ${getToken()}`
       }
@@ -364,48 +365,37 @@ export const previewResume = async (resumeId) => {
   }
 };
 
-export const downloadResume = async (resumeId) => {
+export const downloadResume = async (resumeId, isPreview = false) => {
   try {
-    const response = await fetch(`${API_URL}/resumes/${resumeId}/download`, {
-      headers: {
-        'Authorization': `Bearer ${getToken()}`
+    const token = localStorage.getItem('token');
+    const endpoint = isPreview ? '/preview' : '/download';
+    const response = await axios.get(
+      `${API_BASE_URL}/resumes/${resumeId}${endpoint}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        responseType: 'blob',
       }
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to download resume');
-    }
-    
-    return response.blob();
+    );
+    return response.data;
   } catch (error) {
-    throw error;
+    throw handleError(error);
   }
 };
 
 export const deleteResume = async (resumeId) => {
   try {
-    const response = await fetch(`${API_URL}/resumes/${resumeId}`, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${getToken()}`
-      }
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to delete resume');
-    }
-    
-    return await response.json();
+    const response = await api.delete(`/resumes/${resumeId}`);
+    return response.data;
   } catch (error) {
-    throw error;
+    throw handleError(error);
   }
 };
 
 export const getResumeScore = async (id) => {
   try {
-    const response = await fetch(`${API_URL}/resumes/${id}/score`, {
+    const response = await fetch(`${API_BASE_URL}/resumes/${id}/score`, {
       headers: getAuthHeaders()
     });
     return handleResponse(response);
@@ -417,7 +407,7 @@ export const getResumeScore = async (id) => {
 
 export const analyzeResumes = async (jobDescription, matchThreshold) => {
   try {
-    const response = await fetch(`${API_URL}/ats-score`, {
+    const response = await fetch(`${API_BASE_URL}/ats-score`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -451,3 +441,21 @@ export const analyzeResumes = async (jobDescription, matchThreshold) => {
     throw error;
   }
 };
+
+const handleError = (error) => {
+  if (error.response) {
+    // Handle 401 Unauthorized errors
+    if (error.response.status === 401) {
+      // Clear token and redirect to login
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      return new Error('Session expired. Please login again.');
+    }
+    // Handle other error responses
+    const message = error.response.data?.error || error.response.data?.message || 'An error occurred';
+    return new Error(message);
+  }
+  return error;
+};
+
+export default api;
