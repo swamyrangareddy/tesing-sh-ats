@@ -347,14 +347,12 @@ const ResumeUpload = () => {
     successful: 0,
     failed: 0,
     retrying: 0,
-    completed: 0
+    completed: 0,
+    updated: 0
   });
   const [showUploadProgress, setShowUploadProgress] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadingFiles, setUploadingFiles] = useState([]);
-  const [selectedResumes, setSelectedResumes] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingProgress, setProcessingProgress] = useState(0);
 
   useEffect(() => {
     // Check for authentication
@@ -448,57 +446,38 @@ const ResumeUpload = () => {
         successful: 0,
         failed: 0,
         retrying: 0,
-        completed: 0
+        completed: 0,
+        updated: 0
       });
 
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const formData = new FormData();
+      // Create FormData and append all files
+      const formData = new FormData();
+      Array.from(files).forEach(file => {
         formData.append('file', file);
-
-        try {
-          const response = await uploadResume(formData);
-          const data = response.data;
-
-          // Update stats based on response
-          setUploadStats(prev => {
-            const completed = prev.completed + 1;
-            const successful = prev.successful + (data.status === 'success' ? 1 : 0);
-            const failed = prev.failed + (data.status === 'error' ? 1 : 0);
-            
-            return {
-              ...prev,
-              successful,
-              failed,
-              completed,
-              retrying: data.retries || 0
-            };
-          });
-
-          // Update progress
-          setUploadProgress((prev) => {
-            const newProgress = (uploadStats.completed / files.length) * 100;
-            return Math.min(newProgress, 100);
-          });
-
-          return {
-            success: data.status === 'success',
-            file: file.name,
-            data: data,
-            error: data.error
-          };
-        } catch (err) {
-          setUploadStats(prev => ({
-            ...prev,
-            failed: prev.failed + 1,
-            completed: prev.completed + 1
-          }));
-          return { success: false, file: file.name, error: 'upload_failed' };
-        }
       });
 
-      const results = await Promise.all(uploadPromises);
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
+      // Upload all files in one request
+      const response = await uploadResume(formData);
+      const data = response.data;
+
+      // Process results
+      const successful = data.results.filter(r => r.status === 'success');
+      const failed = data.results.filter(r => r.status === 'error');
+      const updated = successful.filter(r => r.message.includes('updated'));
+      const newUploads = successful.filter(r => r.message.includes('uploaded'));
+
+      // Update stats based on response
+      setUploadStats(prev => ({
+        ...prev,
+        successful: successful.length,
+        failed: failed.length,
+        completed: data.total_files,
+        retrying: data.results.reduce((acc, r) => acc + (r.retries || 0), 0),
+        updated: updated.length
+      }));
+
+      // Update progress
+      setUploadProgress(100);
 
       // Keep progress dialog visible for a moment to show final stats
       setTimeout(() => {
@@ -506,17 +485,24 @@ const ResumeUpload = () => {
         setUploadProgress(0);
         setUploadingFiles([]);
         
-        // Show summary in snackbar
-        const message = `Processed ${files.length} resumes:
-          • ${successful.length} successful
+        // Show detailed summary in snackbar
+        const message = `Processed ${data.total_files} resumes:
+          • ${newUploads.length} new uploads
+          • ${updated.length} updates
           • ${failed.length} failed
-          • ${uploadStats.retrying} required retries`;
-        showSnackbar(message, successful.length > 0 ? 'success' : 'warning');
+          • ${data.results.reduce((acc, r) => acc + (r.retries || 0), 0)} required retries`;
+        
+        // Show appropriate severity based on results
+        let severity = 'success';
+        if (failed.length > 0) {
+          severity = failed.length === data.total_files ? 'error' : 'warning';
+        }
+        
+        showSnackbar(message, severity);
         
         // Add successful uploads to session uploads
         if (successful.length > 0) {
-          const newUploads = successful.map(r => r.data);
-          setSessionUploads(prev => [...prev, ...newUploads]);
+          setSessionUploads(prev => [...prev, ...successful]);
         }
       }, 2000);
 
@@ -792,65 +778,6 @@ const ResumeUpload = () => {
     );
   };
 
-  // Add new function for handling checkbox selection
-  const handleCheckboxChange = (resumeId) => {
-    setSelectedResumes(prev => {
-      if (prev.includes(resumeId)) {
-        return prev.filter(id => id !== resumeId);
-      } else {
-        return [...prev, resumeId];
-      }
-    });
-  };
-
-  // Add new function for handling select all
-  const handleSelectAll = (event) => {
-    if (event.target.checked) {
-      setSelectedResumes(filteredResumes.map(resume => resume._id));
-    } else {
-      setSelectedResumes([]);
-    }
-  };
-
-  // Add new function for batch processing
-  const handleBatchProcess = async () => {
-    if (selectedResumes.length === 0) {
-      showSnackbar('Please select resumes to process', 'warning');
-      return;
-    }
-
-    try {
-      setIsProcessing(true);
-      setProcessingProgress(0);
-
-      for (let i = 0; i < selectedResumes.length; i++) {
-        const resumeId = selectedResumes[i];
-        const response = await fetch(`http://localhost:5000/api/resumes/${resumeId}/reprocess`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to process resume ${resumeId}`);
-        }
-
-        setProcessingProgress(((i + 1) / selectedResumes.length) * 100);
-      }
-
-      showSnackbar('Successfully reprocessed selected resumes', 'success');
-      fetchAllResumes(); // Refresh the list
-      setSelectedResumes([]); // Clear selection
-    } catch (error) {
-      showSnackbar(error.message, 'error');
-    } finally {
-      setIsProcessing(false);
-      setProcessingProgress(0);
-    }
-  };
-
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <SearchBox>
@@ -891,26 +818,6 @@ const ResumeUpload = () => {
             />
           </Button>
         </TopSection>
-
-        {/* Add Batch Processing Button */}
-        {selectedResumes.length > 0 && (
-          <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={handleBatchProcess}
-              disabled={isProcessing}
-              startIcon={isProcessing ? <CircularProgress size={20} /> : null}
-            >
-              Reprocess {selectedResumes.length} Selected Resume{selectedResumes.length > 1 ? 's' : ''}
-            </Button>
-            {isProcessing && (
-              <Box sx={{ flexGrow: 1, ml: 2 }}>
-                <LinearProgress variant="determinate" value={processingProgress} />
-              </Box>
-            )}
-          </Box>
-        )}
       </SearchBox>
 
       <StyledTableContainer component={Paper}>
@@ -930,14 +837,6 @@ const ResumeUpload = () => {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                <StyledTableCell padding="checkbox">
-                  <Checkbox
-                    color="primary"
-                    indeterminate={selectedResumes.length > 0 && selectedResumes.length < filteredResumes.length}
-                    checked={selectedResumes.length > 0 && selectedResumes.length === filteredResumes.length}
-                    onChange={handleSelectAll}
-                  />
-                </StyledTableCell>
                 <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
                 <StyledTableCell sx={{ width: '20%' }}>Email</StyledTableCell>
                 <StyledTableCell sx={{ width: '15%' }}>Job Title</StyledTableCell>
@@ -950,16 +849,8 @@ const ResumeUpload = () => {
               {filteredResumes.map((resume) => (
                 <StyledTableRow 
                   key={resume._id}
-                  selected={selectedResumes.includes(resume._id)}
                   hover
                 >
-                  <StyledTableCell padding="checkbox">
-                    <Checkbox
-                      color="primary"
-                      checked={selectedResumes.includes(resume._id)}
-                      onChange={() => handleCheckboxChange(resume._id)}
-                    />
-                  </StyledTableCell>
                   <StyledTableCell sx={{ width: '15%' }}>
                     <Typography 
                       className="cell-content" 
