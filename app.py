@@ -24,6 +24,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import time
+from waitress import serve
 
 # =============================================
 # Environment Setup and Configuration
@@ -673,105 +674,182 @@ def get_resumes(current_user):
 @token_required
 def upload_resume(current_user):
     """Upload and process a new resume"""
+    results = []  # Initialize results list
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
 
-        file = request.files['file']
-        if file.filename == '':
+        files = request.files.getlist('file')  # Get all files
+        if not files or files[0].filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        # Validate file extension
-        file_ext = os.path.splitext(file.filename)[1].lower()
-        if file_ext not in ['.pdf', '.docx', '.doc']:
-            return jsonify({'error': 'Invalid file format. Please upload PDF or DOCX files only.'}), 400
-
-        try:
-            # Extract text from file
-            resume_text = extract_text_from_file(file)
-            if not resume_text:
-                return jsonify({
+        # Process each file
+        for file in files:
+            # Validate file extension
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext not in ['.pdf', '.docx', '.doc']:
+                results.append({
                     'status': 'error',
-                    'error': 'text_extraction_failed',
-                    'filename': file.filename
-                }), 400
-            
-            # Extract resume information using Gemini with retry
-            max_retries = 3
-            retry_count = 0
-            resume_info = None
-            
-            while retry_count < max_retries and not resume_info:
-                try:
-                    resume_info = extract_resume_info(resume_text)
-                    if not resume_info.get('email'):  # If email extraction failed
+                    'error': 'invalid_format',
+                    'filename': file.filename,
+                    'message': 'Invalid file format. Please upload PDF or DOCX files only.'
+                })
+                continue
+
+            try:
+                # Extract text from file
+                resume_text = extract_text_from_file(file)
+                if not resume_text:
+                    results.append({
+                        'status': 'error',
+                        'error': 'text_extraction_failed',
+                        'filename': file.filename,
+                        'message': 'Failed to extract text from file'
+                    })
+                    continue
+                
+                # Extract resume information using Gemini with retry
+                max_retries = 3
+                retry_count = 0
+                resume_info = None
+                valid_email = False
+                
+                while retry_count < max_retries and not valid_email:
+                    try:
+                        resume_info = extract_resume_info(resume_text)
+                        email = resume_info.get('email', '').strip()
+                        
+                        # Validate email format
+                        if email and re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                            # Check if email already exists
+                            existing_resume = resumes_collection.find_one({
+                                'user_id': str(current_user['_id']),
+                                'email': email
+                            })
+                            
+                            if existing_resume:
+                                # Update existing resume with new information
+                                update_data = {
+                                    'filename': file.filename,
+                                    'content_type': file.content_type,
+                                    'text_content': resume_text,
+                                    'name': resume_info.get('name', existing_resume.get('name', '')),
+                                    'phone_number': resume_info.get('phone_number', existing_resume.get('phone_number', '')),
+                                    'job_title': resume_info.get('current_role', existing_resume.get('job_title', '')),
+                                    'current_job': resume_info.get('current_company', existing_resume.get('current_job', '')),
+                                    'skills': resume_info.get('skills', existing_resume.get('skills', '')),
+                                    'location': resume_info.get('location', existing_resume.get('location', '')),
+                                    'resume_summary': resume_info.get('education', existing_resume.get('resume_summary', '')),
+                                    'experience': resume_info.get('experience_details', existing_resume.get('experience', [])),
+                                    'category': resume_info.get('category', existing_resume.get('category', '')),
+                                    'updated_at': datetime.utcnow(),
+                                    'extraction_retries': retry_count
+                                }
+                                
+                                # Update file data if new file is provided
+                                file.seek(0)
+                                file_data = base64.b64encode(file.read()).decode('utf-8')
+                                update_data['file_data'] = file_data
+                                
+                                resumes_collection.update_one(
+                                    {'_id': existing_resume['_id']},
+                                    {'$set': update_data}
+                                )
+                                
+                                results.append({
+                                    'status': 'success',
+                                    'id': str(existing_resume['_id']),
+                                    'filename': file.filename,
+                                    'name': resume_info.get('name', ''),
+                                    'email': email,
+                                    'skills': resume_info.get('skills', ''),
+                                    'retries': retry_count,
+                                    'message': 'Resume updated successfully'
+                                })
+                                valid_email = True
+                            else:
+                                # Store new resume
+                                file.seek(0)
+                                file_data = base64.b64encode(file.read()).decode('utf-8')
+                                
+                                resume = {
+                                    'user_id': str(current_user['_id']),
+                                    'filename': file.filename,
+                                    'content_type': file.content_type,
+                                    'file_data': file_data,
+                                    'text_content': resume_text,
+                                    'name': resume_info.get('name', ''),
+                                    'email': email,
+                                    'phone_number': resume_info.get('phone_number', ''),
+                                    'job_title': resume_info.get('current_role', ''),
+                                    'current_job': resume_info.get('current_company', ''),
+                                    'skills': resume_info.get('skills', ''),
+                                    'location': resume_info.get('location', ''),
+                                    'resume_summary': resume_info.get('education', ''),
+                                    'experience': resume_info.get('experience_details', []),
+                                    'category': resume_info.get('category', ''),
+                                    'created_at': datetime.utcnow(),
+                                    'updated_at': datetime.utcnow(),
+                                    'extraction_retries': retry_count
+                                }
+                                
+                                result = resumes_collection.insert_one(resume)
+                                
+                                results.append({
+                                    'status': 'success',
+                                    'id': str(result.inserted_id),
+                                    'filename': file.filename,
+                                    'name': resume_info.get('name', ''),
+                                    'email': email,
+                                    'skills': resume_info.get('skills', ''),
+                                    'retries': retry_count,
+                                    'message': 'Resume uploaded successfully'
+                                })
+                                valid_email = True
+                        else:
+                            retry_count += 1
+                            if retry_count == max_retries:
+                                results.append({
+                                    'status': 'error',
+                                    'error': 'invalid_email',
+                                    'filename': file.filename,
+                                    'message': 'Failed to extract valid email after multiple attempts'
+                                })
+                            else:
+                                time.sleep(5)  # Wait 5 seconds before retry
+                                continue
+                                
+                    except Exception as e:
                         retry_count += 1
                         if retry_count == max_retries:
-                            return jsonify({
+                            results.append({
                                 'status': 'error',
-                                'error': 'email_extraction_failed',
-                                'filename': file.filename
-                            }), 400
-                        continue
-                except Exception as e:
-                    retry_count += 1
-                    if retry_count == max_retries:
-                        return jsonify({
-                            'status': 'error',
-                            'error': 'info_extraction_failed',
-                            'filename': file.filename
-                        }), 400
-                    continue
-            
-            # Store the original file as binary data
-            file.seek(0)
-            file_data = base64.b64encode(file.read()).decode('utf-8')
-            
-            # Create new resume document
-            resume = {
-                'user_id': str(current_user['_id']),
-                'filename': file.filename,
-                'content_type': file.content_type,
-                'file_data': file_data,
-                'text_content': resume_text,
-                'name': resume_info.get('name', ''),
-                'email': resume_info.get('email', ''),
-                'phone_number': resume_info.get('phone_number', ''),
-                'job_title': resume_info.get('current_role', ''),
-                'current_job': resume_info.get('current_company', ''),
-                'skills': resume_info.get('skills', ''),
-                'location': resume_info.get('location', ''),
-                'resume_summary': resume_info.get('education', ''),
-                'experience': resume_info.get('experience_details', []),
-                'category': resume_info.get('category', ''),
-                'created_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow(),
-                'extraction_retries': retry_count
-            }
-            
-            result = resumes_collection.insert_one(resume)
-            
-            return jsonify({
-                'status': 'success',
-                'id': str(result.inserted_id),
-                'filename': file.filename,
-                'name': resume_info.get('name', ''),
-                'email': resume_info.get('email', ''),
-                'skills': resume_info.get('skills', ''),
-                'retries': retry_count,
-                'message': 'Resume uploaded successfully'
-            }), 201
-
-        except Exception as e:
-            return jsonify({
-                'status': 'error',
-                'error': 'processing_failed',
-                'filename': file.filename
-            }), 500
-
+                                'error': 'info_extraction_failed',
+                                'filename': file.filename,
+                                'message': str(e)
+                            })
+                        else:
+                            time.sleep(5)  # Wait 5 seconds before retry
+                            continue
+                
+                # Add delay between processing each resume
+                time.sleep(5)  # 5 second delay between each resume
+                
+            except Exception as e:
+                results.append({
+                    'status': 'error',
+                    'error': 'processing_failed',
+                    'filename': file.filename,
+                    'message': str(e)
+                })
+        
+        return jsonify({
+            'total_files': len(files),
+            'results': results
+        })
+        
     except Exception as e:
         return jsonify({
-            'status': 'error',
             'error': 'upload_failed',
             'message': str(e)
         }), 500
@@ -1323,4 +1401,5 @@ def ats_score(current_user):
 # Application Entry Point
 # =============================================
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) 
+    # Remove development server
+    serve(app, host='0.0.0.0', port=5000, threads=4)
