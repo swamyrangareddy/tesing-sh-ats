@@ -39,6 +39,8 @@ import {
   Star as StarIcon,
   LinkedIn as LinkedInIcon,
   AttachFile as AttachFileIcon,
+  Code as CodeIcon,
+  Build as BuildIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
@@ -108,6 +110,49 @@ const ProgressBar = styled(LinearProgress)(({ theme }) => ({
   '& .MuiLinearProgress-bar': {
     borderRadius: 5,
   },
+}));
+
+// Add new styled components for skills
+const SkillContainer = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: theme.spacing(2),
+  padding: theme.spacing(2),
+  borderRadius: theme.spacing(2),
+  backgroundColor: theme.palette.background.paper,
+  boxShadow: theme.shadows[1],
+}));
+
+const SkillCard = styled(Paper)(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: theme.spacing(2),
+  width: 150,
+  height: 150,
+  borderRadius: theme.spacing(2),
+  transition: 'all 0.3s ease',
+  cursor: 'pointer',
+  '&:hover': {
+    transform: 'scale(1.05)',
+    boxShadow: theme.shadows[4],
+    backgroundColor: theme.palette.primary.light,
+    color: theme.palette.primary.contrastText,
+  },
+}));
+
+const SkillIcon = styled(Box)(({ theme }) => ({
+  fontSize: '3rem',
+  marginBottom: theme.spacing(1),
+  color: theme.palette.primary.main,
+}));
+
+const SkillProgressContainer = styled(Box)(({ theme }) => ({
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(2),
 }));
 
 const ResumeProfile = () => {
@@ -225,40 +270,96 @@ const ResumeProfile = () => {
       return <Typography variant="body2" color="text.secondary">No skills available</Typography>;
     }
 
-    return profile.skills.map((skill, index) => (
-      <Grid item xs={12} sm={6} key={index}>
-        <Box sx={{ mb: 2 }}>
-          {isEditing ? (
-            <TextField
-              fullWidth
-              label="Skill"
-              name="name"
-              value={skill.name}
-              onChange={(e) => handleInputChange(e, 'skills', index)}
-              variant="outlined"
-              size="small"
-              sx={{ mb: 1 }}
-            />
-          ) : (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body1">{skill.name}</Typography>
-              <Typography variant="body2" color="textSecondary">
-                {skill.level}%
-              </Typography>
-            </Box>
-          )}
-          <ProgressBar
-            variant="determinate"
-            value={skill.level}
-            sx={{
-              '& .MuiLinearProgress-bar': {
-                backgroundColor: `hsl(${skill.level * 1.2}, 70%, 50%)`,
-              },
+    return (
+      <SkillContainer>
+        {profile.skills.map((skill, index) => (
+          <motion.div
+            key={index}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, delay: index * 0.1 }}
+          >
+            {isEditing ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <TextField
+                  fullWidth
+                  label="Skill"
+                  name="name"
+                  value={skill.name}
+                  onChange={(e) => handleInputChange(e, 'skills', index)}
+                  variant="outlined"
+                  size="small"
+                />
+                <TextField
+                  type="number"
+                  label="Proficiency"
+                  name="level"
+                  value={skill.level}
+                  onChange={(e) => handleInputChange(e, 'skills', index)}
+                  variant="outlined"
+                  size="small"
+                  InputProps={{ inputProps: { min: 0, max: 100 } }}
+                  sx={{ width: 120 }}
+                />
+                <IconButton 
+                  color="error" 
+                  onClick={() => {
+                    const updatedSkills = profile.skills.filter((_, i) => i !== index);
+                    setProfile(prev => ({ ...prev, skills: updatedSkills }));
+                  }}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
+            ) : (
+              <SkillCard elevation={3}>
+                <SkillIcon>
+                  {skill.name.toLowerCase().includes('react') ? <CodeIcon /> : 
+                   skill.name.toLowerCase().includes('design') ? <BuildIcon /> : 
+                   <CodeIcon />}
+                </SkillIcon>
+                <Typography variant="h6" align="center" gutterBottom>
+                  {skill.name}
+                </Typography>
+                <SkillProgressContainer>
+                  <LinearProgress
+                    variant="determinate"
+                    value={skill.level}
+                    sx={{
+                      flexGrow: 1,
+                      height: 10,
+                      borderRadius: 5,
+                      '& .MuiLinearProgress-bar': {
+                        backgroundColor: `hsl(${skill.level * 1.2}, 70%, 50%)`,
+                      },
+                    }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    {skill.level}%
+                  </Typography>
+                </SkillProgressContainer>
+              </SkillCard>
+            )}
+          </motion.div>
+        ))}
+        {isEditing && (
+          <Button 
+            startIcon={<AddIcon />} 
+            variant="outlined"
+            color="primary"
+            onClick={() => {
+              setProfile(prev => ({
+                ...prev,
+                skills: [...prev.skills, { name: '', level: 50 }]
+              }));
             }}
-          />
-        </Box>
-      </Grid>
-    ));
+            sx={{ alignSelf: 'center', mt: 2 }}
+          >
+            Add Skill
+          </Button>
+        )}
+      </SkillContainer>
+    );
   };
 
   return (
@@ -442,9 +543,7 @@ const ResumeProfile = () => {
               </Button>
             )}
           </Typography>
-          <Grid container spacing={2}>
-            {renderSkills()}
-          </Grid>
+          {renderSkills()}
         </ProfileSection>
 
         <ProfileSection>
