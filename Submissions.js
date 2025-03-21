@@ -10,7 +10,6 @@ import {
   TableHead,
   TableRow,
   Button,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -20,11 +19,12 @@ import {
   Snackbar,
   MenuItem,
   TablePagination,
-  RadioGroup,
-  Radio,
-  FormControlLabel,
   CircularProgress,
   InputAdornment,
+  IconButton,
+  Grid,
+  Tooltip,
+  Stack,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -34,26 +34,57 @@ import {
   Upload as UploadIcon,
   CheckCircle as CheckCircleIcon,
   InfoOutlined as InfoOutlinedIcon,
+  Visibility as VisibilityIcon,
+  Close as CloseIcon,
+  Work as WorkIcon,
+  Person as PersonIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
-import { styled, useTheme } from '@mui/material/styles';
+import { styled, useTheme, alpha } from '@mui/material/styles';
 import NoData from '../components/NoData';
 import { getSubmissions, createSubmission, updateSubmission, deleteSubmission, getJobs, getRecruiters } from '../services/api';
 
-const SearchContainer = styled(Box)(({ theme }) => ({
-  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%)',
-  backdropFilter: 'blur(20px)',
-  borderRadius: theme.spacing(2),
-  padding: theme.spacing(2.5),
+const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
   gap: theme.spacing(2),
+  marginBottom: theme.spacing(3),
   alignItems: 'center',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.08)',
-  border: '1px solid rgba(231, 235, 240, 0.7)',
-  transition: 'all 0.3s ease',
-  '&:hover': {
-    boxShadow: '0 12px 40px rgba(0, 0, 0, 0.12)',
-    transform: 'translateY(-2px)',
+  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+  padding: theme.spacing(2),
+  borderRadius: theme.spacing(2),
+  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  backdropFilter: 'blur(10px)',
+}));
+
+const StyledTextField = styled(TextField)(({ theme }) => ({
+  '& .MuiOutlinedInput-root': {
+    backgroundColor: '#ffffff',
+    borderRadius: theme.spacing(2),
+    transition: 'all 0.3s ease',
+    '&:hover': {
+      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    },
+    '& fieldset': {
+      borderColor: 'rgba(0, 0, 0, 0.1)',
+    },
+    '&:hover fieldset': {
+      borderColor: theme.palette.primary.main,
+    },
   },
+}));
+
+
+const SearchContainer = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  gap: theme.spacing(2),
+  marginBottom: theme.spacing(3),
+  alignItems: 'center',
+  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+  padding: theme.spacing(2),
+  borderRadius: theme.spacing(2),
+  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  backdropFilter: 'blur(10px)',
+
 }));
 
 const ModernSearchField = styled(TextField)(({ theme }) => ({
@@ -61,6 +92,7 @@ const ModernSearchField = styled(TextField)(({ theme }) => ({
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
     borderRadius: theme.spacing(1.5),
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+    border: '3px solid rgba(231, 235, 240, 0.8)',
     height: '46px',
     '&:hover': {
       backgroundColor: 'rgba(255, 255, 255, 0.9)',
@@ -109,9 +141,15 @@ const ModernButton = styled(Button)(({ theme, variant = 'contained' }) => ({
       boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
     },
   }),
-  '& .MuiButton-startIcon': {
-    marginRight: theme.spacing(1),
-  },
+  ...(variant === 'outlined' && {
+    border: '2px solid rgba(59, 130, 246, 0.5)',
+    color: '#3B82F6',
+    '&:hover': {
+      border: '2px solid #3B82F6',
+      background: 'rgba(59, 130, 246, 0.05)',
+      transform: 'translateY(-2px)',
+    },
+  }),
 }));
 
 const SearchIconWrapper = styled(SearchIcon)(({ theme }) => ({
@@ -218,75 +256,6 @@ const FormSection = styled(Box)(({ theme }) => ({
   },
 }));
 
-const StyledTextField = styled(TextField)(({ theme }) => ({
-  '& .MuiOutlinedInput-root': {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: theme.spacing(2),
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    '&:hover': {
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
-      transform: 'translateY(-2px)',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-    },
-    '&.Mui-focused': {
-      backgroundColor: '#ffffff',
-      transform: 'translateY(-2px)',
-      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-    },
-    '& fieldset': {
-      borderColor: 'rgba(0, 0, 0, 0.1)',
-      transition: 'all 0.3s ease',
-    },
-    '&:hover fieldset': {
-      borderColor: theme.palette.primary.main,
-    },
-    '&.Mui-focused fieldset': {
-      borderWidth: '2px',
-    },
-  },
-  '& .MuiInputLabel-root': {
-    transition: 'all 0.3s ease',
-    '&.Mui-focused': {
-      color: theme.palette.primary.main,
-    },
-  },
-  '& .MuiSelect-select': {
-    paddingTop: '12px',
-    paddingBottom: '12px',
-  },
-}));
-
-const UploadSection = styled(Box)(({ theme }) => ({
-  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
-  borderRadius: theme.spacing(2),
-  padding: theme.spacing(3),
-  marginBottom: theme.spacing(3),
-  border: '1px solid rgba(59, 130, 246, 0.1)',
-  transition: 'all 0.3s ease',
-  color: '#ffffff',
-  '&:hover': {
-    transform: 'translateY(-2px)',
-    boxShadow: '0 8px 24px rgba(59, 130, 246, 0.1)',
-  },
-}));
-
-const UploadButton = styled(Button)(({ theme }) => ({
-  borderRadius: theme.spacing(2),
-  padding: theme.spacing(1.5, 3),
-  textTransform: 'none',
-  fontSize: '0.95rem',
-  fontWeight: 500,
-  background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
-  color: '#fff',
-  boxShadow: '0 4px 14px rgba(59, 130, 246, 0.25)',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  '&:hover': {
-    background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
-    transform: 'translateY(-2px)',
-    boxShadow: '0 6px 20px rgba(59, 130, 246, 0.35)',
-  },
-}));
-
 const ActionButton = styled(Button)(({ theme, variant }) => ({
   borderRadius: theme.spacing(2),
   padding: theme.spacing(1.2, 3),
@@ -357,6 +326,76 @@ const StyledStatus = styled(Typography)(({ status, theme }) => ({
   }
 }));
 
+const ViewDialogContent = styled(DialogContent)(({ theme }) => ({
+  padding: theme.spacing(4),
+  background: 'linear-gradient(to bottom, #ffffff, #f8fafc)',
+  '& > *:last-child': {
+    marginBottom: 0
+  }
+}));
+
+const SectionTitle = styled(Typography)(({ theme }) => ({
+  fontSize: '1.1rem',
+  fontWeight: 600,
+  color: theme.palette.primary.main,
+  marginBottom: theme.spacing(2.5),
+  position: 'relative',
+  paddingLeft: theme.spacing(2),
+  '&:before': {
+    content: '""',
+    position: 'absolute',
+    left: 0,
+    top: '50%',
+    transform: 'translateY(-50%)',
+    height: '80%',
+    width: '4px',
+    backgroundColor: theme.palette.primary.main,
+    borderRadius: theme.spacing(1),
+  }
+}));
+
+const InfoCard = styled(Box)(({ theme }) => ({
+  background: '#ffffff',
+  borderRadius: theme.spacing(1.5),
+  padding: theme.spacing(2.5),
+  boxShadow: '0 2px 12px rgba(0, 0, 0, 0.03)',
+  border: '1px solid rgba(231, 235, 240, 0.8)',
+  transition: 'all 0.2s ease',
+  '&:hover': {
+    transform: 'translateY(-2px)',
+    boxShadow: '0 4px 16px rgba(0, 0, 0, 0.06)',
+  }
+}));
+
+const InfoLabel = styled(Typography)(({ theme }) => ({
+  fontSize: '0.75rem',
+  color: theme.palette.text.secondary,
+  fontWeight: 500,
+  textTransform: 'uppercase',
+  letterSpacing: '0.5px',
+  marginBottom: theme.spacing(0.5)
+}));
+
+const InfoValue = styled(Typography)(({ theme }) => ({
+  fontSize: '0.95rem',
+  color: theme.palette.text.primary,
+  fontWeight: 500,
+  lineHeight: 1.5
+}));
+
+// Move helper functions outside components
+const getJobTitle = (jobId, jobs) => {
+  if (!jobId) return '';
+  const job = jobs.find(j => j.id === jobId);
+  return job?.title || '';
+};
+
+const getRecruiterName = (recruiterId, recruiters) => {
+  if (!recruiterId) return '';
+  const recruiter = recruiters.find(r => r.id === recruiterId);
+  return recruiter?.name || '';
+};
+
 const Submissions = () => {
   const theme = useTheme();
   const [submissions, setSubmissions] = useState([]);
@@ -393,18 +432,8 @@ const Submissions = () => {
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-
-  const getJobTitle = useCallback((jobId) => {
-    if (!jobId) return '';
-    const job = jobs.find(j => j.id === jobId);
-    return job?.title || '';
-  }, [jobs]);
-
-  const getRecruiterName = useCallback((recruiterId) => {
-    if (!recruiterId) return '';
-    const recruiter = recruiters.find(r => r.id === recruiterId);
-    return recruiter?.name || '';
-  }, [recruiters]);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewSubmission, setViewSubmission] = useState(null);
 
   useEffect(() => {
     fetchSubmissions();
@@ -417,8 +446,8 @@ const Submissions = () => {
       (submission) => {
         const candidateName = submission?.candidate_name?.toLowerCase() || '';
         const candidateEmail = submission?.candidate_email?.toLowerCase() || '';
-        const jobTitle = getJobTitle(submission?.job_id)?.toLowerCase() || '';
-        const recruiterName = getRecruiterName(submission?.recruiter_id)?.toLowerCase() || '';
+        const jobTitle = getJobTitle(submission?.job_id, jobs)?.toLowerCase() || '';
+        const recruiterName = getRecruiterName(submission?.recruiter_id, recruiters)?.toLowerCase() || '';
         const searchTermLower = searchTerm.toLowerCase();
         
         return candidateName.includes(searchTermLower) ||
@@ -429,7 +458,7 @@ const Submissions = () => {
     );
     setFilteredSubmissions(filtered);
     setPage(0);
-  }, [searchTerm, submissions, jobs, recruiters, getJobTitle, getRecruiterName]);
+  }, [searchTerm, submissions, jobs, recruiters]);
 
   const fetchSubmissions = async () => {
     try {
@@ -734,6 +763,16 @@ const Submissions = () => {
     }
   };
 
+  const handleViewOpen = (submission) => {
+    setViewSubmission(submission);
+    setViewDialogOpen(true);
+  };
+
+  const handleViewClose = () => {
+    setViewDialogOpen(false);
+    setViewSubmission(null);
+  };
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Snackbar
@@ -751,29 +790,40 @@ const Submissions = () => {
         </Alert>
       </Snackbar>
 
-      <SearchContainer>
-        <ModernSearchField
-          placeholder="Search submissions..."
+      <SearchBox>
+        <StyledTextField
+          label="Search submissions"
+          size="small"
           variant="outlined"
-          fullWidth
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
             startAdornment: (
-              <InputAdornment position="start">
-                <SearchIconWrapper />
-              </InputAdornment>
+              <SearchIcon color="action" sx={{ mr: 1 }} />
             ),
           }}
+          sx={{ flexGrow: 1 }}
         />
-        <ModernButton
+        <Button
           variant="contained"
+          color="primary"
           startIcon={<AddIcon />}
           onClick={() => handleOpen()}
+          sx={{
+            borderRadius: 2,
+            px: 3,
+            py: 1,
+            textTransform: 'none',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
+            },
+          }}
         >
-          Add Submission
-        </ModernButton>
-      </SearchContainer>
+          Add submission
+        </Button>
+      </SearchBox>
 
       {submissions.length === 0 ? (
         <NoData type="submissions" />
@@ -798,10 +848,10 @@ const Submissions = () => {
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((submission) => (
                 <StyledTableRow key={submission._id}>
-                  <TableCell>{getJobTitle(submission.job_id)}</TableCell>
+                  <TableCell>{getJobTitle(submission.job_id, jobs)}</TableCell>
                   <TableCell>{submission.candidate_name}</TableCell>
                   <TableCell>{submission.candidate_email}</TableCell>
-                  <TableCell>{getRecruiterName(submission.recruiter_id)}</TableCell>
+                  <TableCell>{getRecruiterName(submission.recruiter_id, recruiters)}</TableCell>
                   <TableCell>{`${submission.candidate_city}, ${submission.candidate_state}`}</TableCell>
                   <TableCell>{submission.visa}</TableCell>
                   <TableCell>{submission.pay_rate}</TableCell>
@@ -811,18 +861,50 @@ const Submissions = () => {
                     </StyledStatus>
                   </TableCell>
                   <TableCell align="right">
-                    <ActionButton
-                      onClick={() => handleOpen(submission)}
-                      sx={{ color: theme.palette.primary.main }}
-                    >
-                      <EditIcon />
-                    </ActionButton>
-                    <ActionButton
-                      onClick={() => handleDelete(submission._id)}
-                      sx={{ color: theme.palette.error.main }}
-                    >
-                      <DeleteIcon />
-                    </ActionButton>
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Tooltip title="View Details">
+                        <IconButton
+                          onClick={() => handleViewOpen(submission)}
+                          size="small"
+                          sx={{ 
+                            color: theme.palette.info.main,
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.info.main, 0.1),
+                            }
+                          }}
+                        >
+                          <VisibilityIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Edit">
+                        <IconButton
+                          onClick={() => handleOpen(submission)}
+                          size="small"
+                          sx={{ 
+                            color: theme.palette.primary.main,
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                            }
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete">
+                        <IconButton
+                          onClick={() => handleDelete(submission._id)}
+                          size="small"
+                          sx={{ 
+                            color: theme.palette.error.main,
+                            '&:hover': {
+                              backgroundColor: alpha(theme.palette.error.main, 0.1),
+                            }
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </TableCell>
                 </StyledTableRow>
               ))}
@@ -911,7 +993,13 @@ const Submissions = () => {
                       startIcon={<UploadIcon />}
                       sx={{
                         minWidth: '160px',
-                        background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+                        background: ' #F3F4F6FF',
+                        border: '1px solid #primary',
+                      
+                        '&:hover': {
+                          background: '#22CCB2',
+                          color: '#primary',
+                        },
                       }}
                     >
                       Choose File
@@ -1101,8 +1189,151 @@ const Submissions = () => {
           </ActionButton>
         </DialogActions>
       </StyledDialog>
+
+      <ViewDialog
+        open={viewDialogOpen}
+        onClose={handleViewClose}
+        submission={viewSubmission}
+        jobs={jobs}
+        recruiters={recruiters}
+      />
     </Container>
   );
 };
 
-export default Submissions; 
+// Add the ViewDialog component
+const ViewDialog = ({ open, onClose, submission, jobs, recruiters }) => {
+  if (!submission) return null;
+
+  const sections = [
+    {
+      title: 'Job Details' ,
+      icon: <WorkIcon sx={{ color: 'primary.main', mr: 1 }} />,
+      items: [
+        { label: 'Job Title', value: getJobTitle(submission.job_id, jobs) },
+        { label: 'Recruiter', value: getRecruiterName(submission.recruiter_id, recruiters) },
+      ]
+    },
+    {
+      title: 'Candidate Information',
+      icon: <PersonIcon sx={{ color: 'primary.main', mr: 1 }} />,
+      items: [
+        { label: 'Name', value: submission.candidate_name },
+        { label: 'Email', value: submission.candidate_email },
+        { label: 'Phone', value: submission.candidate_phone },
+        { label: 'Location', value: `${submission.candidate_city}, ${submission.candidate_state}, ${submission.candidate_country}` },
+      ]
+    },
+    {
+      title: 'Submission Details',
+      icon: <InfoIcon sx={{ color: 'primary.main', mr: 1 }} />,
+      items: [
+        { label: 'Visa Status', value: submission.visa },
+        { label: 'Pay Rate', value: submission.pay_rate },
+        { 
+          label: 'Status', 
+          value: submission.status,
+          custom: true,
+          render: () => (
+            <StyledStatus status={submission.status}>
+              {submission.status}
+            </StyledStatus>
+          )
+        },
+        { 
+          label: 'Notes', 
+          value: submission.notes,
+          fullWidth: true 
+        },
+      ]
+    }
+  ];
+
+  return (
+    <StyledDialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          mb: 1
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Submission Details
+            </Typography>
+          </Box>
+          <IconButton 
+            onClick={onClose} 
+            size="small"
+            sx={{
+              color: 'text.secondary',
+              '&:hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.04)',
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Box>
+      </DialogTitle>
+      <ViewDialogContent dividers>
+        {sections.map((section, index) => (
+          <Box key={index} sx={{ mb: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              {section.icon}
+              <SectionTitle variant="subtitle1">
+                {section.title}
+              </SectionTitle>
+            </Box>
+            <Grid container spacing={2.5}>
+              {section.items.map((item, i) => (
+                <Grid 
+                  item 
+                  xs={12} 
+                  sm={item.fullWidth ? 12 : 6} 
+                  key={i}
+                >
+                  <InfoCard>
+                    <InfoLabel>
+                      {item.label}
+                    </InfoLabel>
+                    {item.custom ? (
+                      item.render()
+                    ) : (
+                      <InfoValue>
+                        {item.value || '-'}
+                      </InfoValue>
+                    )}
+                  </InfoCard>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        ))}
+      </ViewDialogContent>
+      <DialogActions sx={{ p: 3, background: '#f8fafc' }}>
+        <Button 
+          onClick={onClose} 
+          variant="contained"
+          sx={{
+            borderRadius: 2,
+            px: 4,
+            py: 1,
+            textTransform: 'none',
+            fontWeight: 600,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
+            },
+          }}
+        >
+          Close
+        </Button>
+      </DialogActions>
+    </StyledDialog>
+  );
+};
+
+export default Submissions;
