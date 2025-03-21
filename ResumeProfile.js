@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Paper,
@@ -42,6 +42,7 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const ProfileContainer = styled(Container)(({ theme }) => ({
   marginTop: theme.spacing(4),
@@ -110,102 +111,245 @@ const ProgressBar = styled(LinearProgress)(({ theme }) => ({
 }));
 
 const ResumeProfile = () => {
-  const [profile] = useState({
-    name: 'John Smith',
-    title: 'Senior Full Stack Developer',
-    email: 'john.smith@example.com',
-    phone: '+1 (555) 123-4567',
-    location: 'San Francisco, CA',
-    linkedin: 'linkedin.com/in/johnsmith',
-    experience: '8 years',
-    currentCTC: '$120,000',
-    expectedCTC: '$150,000',
-    noticePeriod: '2 months',
-    summary: 'Experienced Full Stack Developer with 8+ years of expertise in building scalable web applications. Proficient in React, Node.js, and cloud technologies. Led multiple successful projects and mentored junior developers.',
-    skills: [
-      { name: 'React.js', level: 90 },
-      { name: 'Node.js', level: 85 },
-      { name: 'Python', level: 80 },
-      { name: 'AWS', level: 75 },
-      { name: 'Docker', level: 85 },
-      { name: 'MongoDB', level: 80 },
-    ],
-    workExperience: [
-      {
-        role: 'Senior Full Stack Developer',
-        company: 'Tech Solutions Inc.',
-        duration: 'Jan 2020 - Present',
-        location: 'San Francisco, CA',
-        achievements: [
-          'Led a team of 5 developers in building a cloud-native e-commerce platform',
-          'Improved application performance by 40% through optimization',
-          'Implemented CI/CD pipeline reducing deployment time by 60%',
-        ],
-      },
-      {
-        role: 'Full Stack Developer',
-        company: 'Digital Innovations Ltd.',
-        duration: 'Mar 2017 - Dec 2019',
-        location: 'Boston, MA',
-        achievements: [
-          'Developed and maintained multiple client-facing applications',
-          'Reduced server costs by 30% through architecture optimization',
-          'Mentored 3 junior developers',
-        ],
-      },
-    ],
-    education: [
-      {
-        degree: 'Master of Science in Computer Science',
-        institution: 'Stanford University',
-        year: '2015-2017',
-        gpa: '3.8/4.0',
-      },
-      {
-        degree: 'Bachelor of Science in Computer Engineering',
-        institution: 'University of California, Berkeley',
-        year: '2011-2015',
-        gpa: '3.9/4.0',
-      },
-    ],
-    certifications: [
-      'AWS Certified Solutions Architect',
-      'Google Cloud Professional Developer',
-      'MongoDB Certified Developer',
-    ],
-    languages: [
-      { name: 'English', proficiency: 'Native' },
-      { name: 'Spanish', proficiency: 'Professional' },
-      { name: 'French', proficiency: 'Intermediate' },
-    ],
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isEditing, setIsEditing] = useState(false);
+  const [profile, setProfile] = useState({
+    name: '',
+    title: '',
+    email: '',
+    phone: '',
+    location: '',
+    linkedin: '',
+    experience: '',
+    currentCTC: '',
+    expectedCTC: '',
+    noticePeriod: '',
+    summary: '',
+    skills: [],
+    workExperience: [],
+    education: [],
+    certifications: [],
+    languages: []
   });
 
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
+
+  useEffect(() => {
+    // Check if resume data is passed through navigation state
+    const resumeData = location.state?.resume;
+    if (resumeData) {
+      // Transform resume data to match profile structure
+      const transformedProfile = {
+        name: resumeData.name || 'N/A',
+        title: resumeData.job_title || 'N/A',
+        email: resumeData.email || 'N/A',
+        phone: resumeData.phone_number || 'N/A',
+        location: resumeData.location || 'N/A',
+        linkedin: resumeData.linkedin || 'N/A',
+        experience: resumeData.experience ? `${resumeData.experience} years` : 'N/A',
+        currentCTC: 'N/A',
+        expectedCTC: 'N/A',
+        noticePeriod: 'N/A',
+        summary: resumeData.resume_summary || 'No summary available',
+        skills: resumeData.skills 
+          ? (typeof resumeData.skills === 'string' 
+              ? resumeData.skills.split(',').map(skill => ({ name: skill.trim(), level: 70 }))
+              : resumeData.skills.map(skill => ({ name: skill, level: 70 })))
+          : [],
+        workExperience: resumeData.experience_details || [],
+        education: [],
+        certifications: [], 
+        languages: []
+      };
+      setProfile(transformedProfile);
+    }
+  }, [location.state]);
+
+  const handleEditToggle = () => {
+    setIsEditing(!isEditing);
+  };
+
+  const handleInputChange = (e, section = null, index = null) => {
+    const { name, value } = e.target;
+    
+    if (section && index !== null) {
+      // Handle nested array updates
+      const updatedSection = [...profile[section]];
+      updatedSection[index] = {
+        ...updatedSection[index],
+        [name]: value
+      };
+      setProfile(prev => ({
+        ...prev,
+        [section]: updatedSection
+      }));
+    } else {
+      // Handle top-level field updates
+      setProfile(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  const handleSave = () => {
+    // TODO: Implement actual save logic to backend
+    setSnackbar({
+      open: true,
+      message: 'Profile updated successfully',
+      severity: 'success'
+    });
+    setIsEditing(false);
+  };
+
+  const handleAddExperience = () => {
+    setProfile(prev => ({
+      ...prev,
+      workExperience: [...prev.workExperience, {
+        role: '',
+        company: '',
+        duration: '',
+        location: '',
+        achievements: ['']
+      }]
+    }));
+  };
+
+  const renderSkills = () => {
+    if (!profile.skills || profile.skills.length === 0) {
+      return <Typography variant="body2" color="text.secondary">No skills available</Typography>;
+    }
+
+    return profile.skills.map((skill, index) => (
+      <Grid item xs={12} sm={6} key={index}>
+        <Box sx={{ mb: 2 }}>
+          {isEditing ? (
+            <TextField
+              fullWidth
+              label="Skill"
+              name="name"
+              value={skill.name}
+              onChange={(e) => handleInputChange(e, 'skills', index)}
+              variant="outlined"
+              size="small"
+              sx={{ mb: 1 }}
+            />
+          ) : (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="body1">{skill.name}</Typography>
+              <Typography variant="body2" color="textSecondary">
+                {skill.level}%
+              </Typography>
+            </Box>
+          )}
+          <ProgressBar
+            variant="determinate"
+            value={skill.level}
+            sx={{
+              '& .MuiLinearProgress-bar': {
+                backgroundColor: `hsl(${skill.level * 1.2}, 70%, 50%)`,
+              },
+            }}
+          />
+        </Box>
+      </Grid>
+    ));
+  };
+
   return (
-    <ProfileContainer maxWidth="lg">
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+      >
+        <Alert 
+          severity={snackbar.severity} 
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <ProfileHeader elevation={3}>
+        <ProfileHeader elevation={3} sx={{ position: 'relative' }}>
+          {!isEditing && (
+            <IconButton 
+              onClick={handleEditToggle}
+              sx={{ 
+                position: 'absolute', 
+                top: 16, 
+                right: 16, 
+                color: 'white' 
+              }}
+            >
+              <EditIcon />
+            </IconButton>
+          )}
           <Grid container spacing={3}>
             <Grid item xs={12} md={3} sx={{ textAlign: 'center' }}>
               <StyledAvatar>{profile.name.charAt(0)}</StyledAvatar>
-              <Button
-                variant="outlined"
-                startIcon={<AttachFileIcon />}
-                sx={{ color: 'white', borderColor: 'white' }}
-              >
-                Resume.pdf
-              </Button>
+              {isEditing ? (
+                <Button
+                  variant="outlined"
+                  component="label"
+                  startIcon={<AttachFileIcon />}
+                  sx={{ color: 'white', borderColor: 'white' }}
+                >
+                  Upload Resume
+                  <input type="file" hidden />
+                </Button>
+              ) : (
+                <Button
+                  variant="outlined"
+                  startIcon={<AttachFileIcon />}
+                  sx={{ color: 'white', borderColor: 'white' }}
+                >
+                  Resume.pdf
+                </Button>
+              )}
             </Grid>
             <Grid item xs={12} md={9}>
-              <Typography variant="h4" gutterBottom>
-                {profile.name}
-              </Typography>
-              <Typography variant="h6" gutterBottom>
-                {profile.title}
-              </Typography>
+              {isEditing ? (
+                <>
+                  <TextField
+                    fullWidth
+                    label="Name"
+                    name="name"
+                    value={profile.name}
+                    onChange={handleInputChange}
+                    variant="outlined"
+                    sx={{ mb: 2 }}
+                  />
+                  <TextField
+                    fullWidth
+                    label="Job Title"
+                    name="title"
+                    value={profile.title}
+                    onChange={handleInputChange}
+                    variant="outlined"
+                    sx={{ mb: 2 }}
+                  />
+                </>
+              ) : (
+                <>
+                  <Typography variant="h4" gutterBottom>
+                    {profile.name}
+                  </Typography>
+                  <Typography variant="h6" gutterBottom>
+                    {profile.title}
+                  </Typography>
+                </>
+              )}
               <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <LocationIcon sx={{ mr: 1 }} />
@@ -233,6 +377,27 @@ const ResumeProfile = () => {
             </Grid>
           </Grid>
         </ProfileHeader>
+
+        {isEditing ? (
+          <Box sx={{ mt: 3, textAlign: 'right' }}>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              onClick={handleSave}
+              startIcon={<SaveIcon />}
+            >
+              Save Profile
+            </Button>
+            <Button 
+              variant="outlined" 
+              color="secondary" 
+              onClick={handleEditToggle}
+              sx={{ ml: 2 }}
+            >
+              Cancel
+            </Button>
+          </Box>
+        ) : null}
 
         <ProfileSection>
           <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
@@ -267,29 +432,18 @@ const ResumeProfile = () => {
         <ProfileSection>
           <Typography variant="h6" gutterBottom>
             Key Skills
+            {isEditing && (
+              <Button 
+                startIcon={<AddIcon />} 
+                size="small"
+                sx={{ ml: 2 }}
+              >
+                Add Skill
+              </Button>
+            )}
           </Typography>
           <Grid container spacing={2}>
-            {profile.skills.map((skill, index) => (
-              <Grid item xs={12} sm={6} key={index}>
-                <Box sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body1">{skill.name}</Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      {skill.level}%
-                    </Typography>
-                  </Box>
-                  <ProgressBar
-                    variant="determinate"
-                    value={skill.level}
-                    sx={{
-                      '& .MuiLinearProgress-bar': {
-                        backgroundColor: `hsl(${skill.level * 1.2}, 70%, 50%)`,
-                      },
-                    }}
-                  />
-                </Box>
-              </Grid>
-            ))}
+            {renderSkills()}
           </Grid>
         </ProfileSection>
 
@@ -379,7 +533,7 @@ const ResumeProfile = () => {
           </Grid>
         </Grid>
       </motion.div>
-    </ProfileContainer>
+    </Container>
   );
 };
 
