@@ -334,9 +334,6 @@ const ResumeProfile = () => {
                       },
                     }}
                   />
-                  <Typography variant="body2" color="text.secondary">
-                    {skill.level}%
-                  </Typography>
                 </SkillProgressContainer>
               </SkillCard>
             )}
@@ -410,13 +407,13 @@ const ResumeProfile = () => {
                   <input type="file" hidden />
                 </Button>
               ) : (
-                <Button
-                  variant="outlined"
-                  startIcon={<AttachFileIcon />}
-                  sx={{ color: 'white', borderColor: 'white' }}
-                >
-                  Resume.pdf
-                </Button>
+              <Button
+                variant="outlined"
+                startIcon={<AttachFileIcon />}
+                sx={{ color: 'white', borderColor: 'white' }}
+              >
+                Resume.pdf
+              </Button>
               )}
             </Grid>
             <Grid item xs={12} md={9}>
@@ -443,12 +440,12 @@ const ResumeProfile = () => {
                 </>
               ) : (
                 <>
-                  <Typography variant="h4" gutterBottom>
-                    {profile.name}
-                  </Typography>
-                  <Typography variant="h6" gutterBottom>
-                    {profile.title}
-                  </Typography>
+              <Typography variant="h4" gutterBottom>
+                {profile.name}
+              </Typography>
+              <Typography variant="h6" gutterBottom>
+                {profile.title}
+              </Typography>
                 </>
               )}
               <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
