@@ -26,12 +26,10 @@ import {
   Chip,
   tableCellClasses,
   Grid,
-  Divider,
-  ToggleButtonGroup,
   ToggleButton,
   Backdrop,
   Fade,
-  Checkbox
+  Card,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -45,8 +43,7 @@ import {
   Business as BusinessIcon,
   CalendarToday as CalendarIcon,
   Description as DescriptionIcon,
-  ViewList as ViewListIcon,
-  ViewModule as ViewModuleIcon,
+
   Check as CheckIcon
 } from '@mui/icons-material';
 import { styled, useTheme, alpha } from '@mui/material/styles';
@@ -306,7 +303,6 @@ const UploadProgress = styled(Paper)(({ theme }) => ({
   width: '100%',
   backgroundColor: theme.palette.background.default,
   boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
-  backdropFilter: 'blur(10px)',
 }));
 
 const StyledUploadIcon = styled('div')({
@@ -323,6 +319,48 @@ const StyledLinearProgress = styled(LinearProgress)(({ theme }) => ({
     borderRadius: 5,
     backgroundColor: theme.palette.primary.main,
   },
+}));
+
+// Add this upload progress backdrop component after other styled components
+const UploadProgressBackdrop = styled(Backdrop)(({ theme }) => ({
+  zIndex: theme.zIndex.drawer + 1,
+  color: '#fff',
+}));
+
+// Add this component near StyledTableContainer
+const ProgressCard = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(4),
+  borderRadius: theme.spacing(2),
+  maxWidth: 400,
+  width: '100%',
+  backgroundColor: theme.palette.background.paper,
+  boxShadow: theme.shadows[10],
+}));
+
+// Add this styled component after your existing styled components
+const StatsContainer = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(3),
+  padding: theme.spacing(2, 3),
+  marginBottom: theme.spacing(3),
+  backgroundColor: theme.palette.background.paper,
+  borderRadius: theme.spacing(2),
+  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+}));
+
+const StatCard = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(2),
+  padding: theme.spacing(2),
+  borderRadius: theme.spacing(1),
+  backgroundColor: alpha(theme.palette.primary.main, 0.05),
+  transition: 'all 0.3s ease',
+  '&:hover': {
+    backgroundColor: alpha(theme.palette.primary.main, 0.08),
+    transform: 'translateY(-2px)',
+  }
 }));
 
 const ResumeUpload = () => {
@@ -819,6 +857,53 @@ const ResumeUpload = () => {
           </Button>
         </TopSection>
       </SearchBox>
+      
+      <StatsContainer>
+        <StatCard>
+          <Box sx={{ 
+            width: 40, 
+            height: 40, 
+            borderRadius: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.1)
+          }}>
+            <DescriptionIcon color="primary" />
+          </Box>
+          <Box>
+            <Typography variant="h4" color="primary.main" sx={{ fontWeight: 600, lineHeight: 1 }}>
+              {filteredResumes.length}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Total Resumes
+            </Typography>
+          </Box>
+        </StatCard>
+        {searchQuery && (
+          <StatCard>
+            <Box sx={{ 
+              width: 40, 
+              height: 40, 
+              borderRadius: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: (theme) => alpha(theme.palette.info.main, 0.1)
+            }}>
+              <SearchIcon color="info" />
+            </Box>
+            <Box>
+              <Typography variant="h4" color="info.main" sx={{ fontWeight: 600, lineHeight: 1 }}>
+                {filteredResumes.length}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Search Results
+              </Typography>
+            </Box>
+          </StatCard>
+        )}
+      </StatsContainer>
 
       <StyledTableContainer component={Paper}>
         {loading ? (
@@ -1009,22 +1094,6 @@ const ResumeUpload = () => {
           {selectedResume && <ResumeDetailsView resume={selectedResume} />}
         </DialogContent>
         <DialogActions>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={() => {
-              navigate('/resume-profile', { 
-                state: { 
-                  resume: selectedResume 
-                } 
-              });
-              handleCloseDialog();
-            }}
-            startIcon={<PersonIcon />}
-            sx={{ mr: 2 }}
-          >
-            View Profile
-          </Button>
           <Button onClick={handleCloseDialog}>Close</Button>
         </DialogActions>
       </Dialog>
@@ -1093,64 +1162,94 @@ const ResumeUpload = () => {
         </DialogActions>
       </Dialog>
 
-      <Backdrop
-        open={showUploadProgress}
-        sx={{ 
-          color: '#fff', 
-          zIndex: 1300,
-          backgroundColor: 'rgba(0, 0, 0, 0.8)' 
-        }}
-      >
+      <UploadProgressBackdrop open={showUploadProgress}>
         <Fade in={showUploadProgress}>
-          <UploadProgress>
-            <StyledUploadIcon>
-              {uploadProgress === 100 ? <CheckIcon /> : <UploadIcon />}
-            </StyledUploadIcon>
-            <Typography variant="h6" gutterBottom>
-              {uploadProgress === 100 ? 'Upload Complete!' : 'Uploading Resumes...'}
-            </Typography>
-            <StyledLinearProgress 
-              variant="determinate" 
-              value={uploadProgress} 
-            />
-            <Typography variant="body2" color="text.secondary">
-              Processing {uploadStats.completed} of {uploadStats.total} files
-            </Typography>
-            <Box sx={{ mt: 2, textAlign: 'left' }}>
-              <Typography variant="body2" color="success.main">
-                Successful: {uploadStats.successful}
+          <ProgressCard>
+            <Box sx={{ textAlign: 'center', mb: 3 }}>
+              <CircularProgress 
+                size={60} 
+                thickness={4} 
+                value={uploadProgress} 
+                variant="determinate" 
+                sx={{ mb: 2 }}
+              />
+              <Typography variant="h6" gutterBottom>
+                Processing Resumes
               </Typography>
-              <Typography variant="body2" color="error.main">
-                Failed: {uploadStats.failed}
+              <Typography variant="body2" color="text.secondary">
+                {uploadStats.completed} of {uploadStats.total} completed
               </Typography>
-              {uploadStats.retrying > 0 && (
-                <Typography variant="body2" color="warning.main">
-                  Retrying: {uploadStats.retrying}
-                </Typography>
-              )}
             </Box>
-            {uploadingFiles.length > 0 && uploadProgress < 100 && (
-              <Box sx={{ mt: 2, maxHeight: 100, overflowY: 'auto' }}>
-                {uploadingFiles.map((file, index) => (
-                  <Typography 
-                    key={index} 
-                    variant="caption" 
-                    display="block" 
-                    color="text.secondary"
-                    sx={{ 
-                      textOverflow: 'ellipsis',
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {file}
-                  </Typography>
-                ))}
+            
+            <Box sx={{ width: '100%', mb: 3 }}>
+              <LinearProgress 
+                variant="determinate" 
+                value={uploadProgress} 
+                sx={{ 
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: alpha('#fff', 0.1),
+                  '& .MuiLinearProgress-bar': {
+                    borderRadius: 4,
+                  }
+                }}
+              />
+            </Box>
+
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Successful:
+                </Typography>
+                <Typography variant="h6" color="success.main">
+                  {uploadStats.successful}
+                </Typography>
+              </Grid>
+              <Grid item xs={6}>
+                <Typography variant="body2" color="text.secondary">
+                  Failed:
+                </Typography>
+                <Typography variant="h6" color="error.main">
+                  {uploadStats.failed}
+                </Typography>
+              </Grid>
+            </Grid>
+
+            {uploadingFiles.length > 0 && (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Currently Processing:
+                </Typography>
+                <Box sx={{ 
+                  maxHeight: 100, 
+                  overflowY: 'auto',
+                  bgcolor: alpha(theme.palette.background.default, 0.5),
+                  borderRadius: 1,
+                  p: 1
+                }}>
+                  {uploadingFiles.map((filename, index) => (
+                    <Typography 
+                      key={index} 
+                      variant="caption" 
+                      display="block"
+                      sx={{ 
+                        py: 0.5,
+                        px: 1,
+                        borderRadius: 1,
+                        '&:not(:last-child)': {
+                          mb: 0.5,
+                        }
+                      }}
+                    >
+                      {filename}
+                    </Typography>
+                  ))}
+                </Box>
               </Box>
             )}
-          </UploadProgress>
+          </ProgressCard>
         </Fade>
-      </Backdrop>
+      </UploadProgressBackdrop>
 
       <Snackbar
         open={snackbar.open}
