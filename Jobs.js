@@ -38,10 +38,13 @@ import {
   AttachMoney as MoneyIcon,
   Description as DescriptionIcon,
   Business as BusinessIcon,
+  Share as ShareIcon,
+  ContentCopy as CopyIcon,
 } from '@mui/icons-material';
 import { styled, useTheme } from '@mui/material/styles';
 import NoData from '../components/NoData';
-import { getJobs, createJob, updateJob, deleteJob } from '../services/api';
+import { getJobs, createJob, updateJob, deleteJob, getJobByUrl, applyForJob } from '../services/api';
+import { Link } from 'react-router-dom';
 
 const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -156,6 +159,39 @@ const DetailChip = styled(Chip)(({ theme }) => ({
   fontWeight: 500,
 }));
 
+const StyledJobTitle = styled(Link)(({ theme }) => ({
+  color: theme.palette.primary.main,
+  textDecoration: 'none',
+  fontWeight: 500,
+  '&:hover': {
+    textDecoration: 'underline',
+  },
+}));
+
+const ShareButton = styled(IconButton)(({ theme }) => ({
+  transition: 'all 0.3s ease',
+  padding: theme.spacing(1),
+  '&:hover': {
+    transform: 'scale(1.1)',
+    color: theme.palette.primary.main,
+  },
+}));
+
+const ShareLink = styled(Box)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(1),
+  padding: theme.spacing(1),
+  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+  borderRadius: theme.spacing(1),
+  '& .MuiTypography-root': {
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+}));
+
 const Jobs = () => {
   const theme = useTheme();
   const [jobs, setJobs] = useState([]);
@@ -187,6 +223,22 @@ const Jobs = () => {
     status: 'open',
   });
   const [status, setStatus] = useState('');
+  const [openApplyDialog, setOpenApplyDialog] = useState(false);
+  const [selectedJobUrl, setSelectedJobUrl] = useState('');
+  const [applicationFormData, setApplicationFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    country: '',
+    visa: '',
+    pay_rate: '',
+    notes: '',
+  });
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [selectedShareableLink, setSelectedShareableLink] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const handleStatusChange = (event) => {
     setStatus(event.target.value);
@@ -340,6 +392,47 @@ const Jobs = () => {
     setOpenDetailDialog(false);
   };
 
+  const handleJobClick = (job) => {
+    setSelectedJobUrl(job.url);
+    setOpenApplyDialog(true);
+  };
+
+  const handleApplySubmit = async () => {
+    try {
+      await applyForJob(selectedJobUrl, applicationFormData);
+      setSuccessMessage('Application submitted successfully');
+      setOpenApplyDialog(false);
+      setApplicationFormData({
+        name: '',
+        email: '',
+        phone: '',
+        city: '',
+        state: '',
+        country: '',
+        visa: '',
+        pay_rate: '',
+        notes: '',
+      });
+    } catch (error) {
+      setError('Failed to submit application. Please try again.');
+    }
+  };
+
+  const handleShareClick = (job) => {
+    setSelectedShareableLink(`${window.location.origin}/jobs/share/${job.shareable_link}`);
+    setShareDialogOpen(true);
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(selectedShareableLink);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  };
+
   // Render method for job details
   const renderJobDetails = () => {
     if (!selectedJob) return null;
@@ -480,7 +573,6 @@ const Jobs = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Job ID</TableCell>
                 <TableCell>Job Title</TableCell>
                 <TableCell>Location</TableCell>
                 <TableCell>Bill Rate</TableCell>
@@ -488,6 +580,7 @@ const Jobs = () => {
                 <TableCell>Description</TableCell>
                 <TableCell>Client</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Share</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -496,8 +589,11 @@ const Jobs = () => {
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((job) => (
                   <StyledTableRow key={job.id}>
-                    <TableCell sx={{ color: 'text.secondary' }}>{job.id}</TableCell>
-                    <TableCell sx={{ fontWeight: 500, color: '#333' }}>{job.title}</TableCell>
+                    <TableCell>
+                      <TableCell>
+                        {job.title}
+                      </TableCell>
+                    </TableCell>
                     <TableCell>{job.location}</TableCell>
                     <TableCell>{job.bill_rate}</TableCell>
                     <TableCell>{job.visas}</TableCell>
@@ -511,6 +607,14 @@ const Jobs = () => {
                         status={job.status || 'open'}
                         size="small"
                       />
+                    </TableCell>
+                    <TableCell>
+                      <ShareButton
+                        onClick={() => handleShareClick(job)}
+                        sx={{ color: theme.palette.primary.main }}
+                      >
+                        <ShareIcon />
+                      </ShareButton>
                     </TableCell>
                     <TableCell align="right">
                       <ActionButton
@@ -645,7 +749,6 @@ const Jobs = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Job Details Dialog */}
       <Dialog 
         open={openDetailDialog} 
         onClose={handleCloseDetailDialog} 
@@ -668,6 +771,127 @@ const Jobs = () => {
           <Button onClick={handleCloseDetailDialog} color="primary">
             Close
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openApplyDialog}
+        onClose={() => setOpenApplyDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Apply for {selectedJob?.title}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <TextField
+              label="Full Name"
+              value={applicationFormData.name}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, name: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Email"
+              type="email"
+              value={applicationFormData.email}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, email: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Phone"
+              value={applicationFormData.phone}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, phone: e.target.value })}
+              fullWidth
+            />
+            <TextField
+              label="City"
+              value={applicationFormData.city}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, city: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="State"
+              value={applicationFormData.state}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, state: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Country"
+              value={applicationFormData.country}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, country: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Visa Status"
+              value={applicationFormData.visa}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, visa: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Expected Pay Rate"
+              value={applicationFormData.pay_rate}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, pay_rate: e.target.value })}
+              required
+              fullWidth
+            />
+            <TextField
+              label="Additional Notes"
+              value={applicationFormData.notes}
+              onChange={(e) => setApplicationFormData({ ...applicationFormData, notes: e.target.value })}
+              multiline
+              rows={4}
+              fullWidth
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenApplyDialog(false)}>Cancel</Button>
+          <Button onClick={handleApplySubmit} variant="contained" color="primary">
+            Submit Application
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={shareDialogOpen}
+        onClose={() => setShareDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Share Job Link</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Share this link on social media or with candidates:
+            </Typography>
+            <ShareLink>
+              <Typography variant="body2">{selectedShareableLink}</Typography>
+              <IconButton
+                onClick={handleCopyLink}
+                size="small"
+                sx={{ color: copySuccess ? 'success.main' : 'primary.main' }}
+              >
+                <CopyIcon />
+              </IconButton>
+            </ShareLink>
+            {copySuccess && (
+              <Typography
+                variant="caption"
+                color="success.main"
+                sx={{ display: 'block', mt: 1 }}
+              >
+                Link copied to clipboard!
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShareDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Container>
