@@ -858,7 +858,7 @@ const ResumeUpload = () => {
         </TopSection>
       </SearchBox>
       
-      <StatsContainer>
+      {/* <StatsContainer>
         <StatCard>
           <Box sx={{ 
             width: 40, 
@@ -903,7 +903,7 @@ const ResumeUpload = () => {
             </Box>
           </StatCard>
         )}
-      </StatsContainer>
+      </StatsContainer> */}
 
       <StyledTableContainer component={Paper}>
         {loading ? (
