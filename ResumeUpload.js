@@ -1094,6 +1094,18 @@ const ResumeUpload = () => {
           {selectedResume && <ResumeDetailsView resume={selectedResume} />}
         </DialogContent>
         <DialogActions>
+          <Button 
+            onClick={() => {
+              handleCloseDialog();
+              navigate('/resume-profile', { state: { resume: selectedResume } });
+            }}
+            variant="contained"
+            color="primary"
+            startIcon={<PersonIcon />}
+            sx={{ mr: 1 }}
+          >
+            View Full Profile
+          </Button>
           <Button onClick={handleCloseDialog}>Close</Button>
         </DialogActions>
       </Dialog>
