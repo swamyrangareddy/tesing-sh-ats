@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000/api';
-
+// Get API URL from environment variables with fallback
+const API_BASE_URL = "http://localhost:5000/api"
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -17,6 +17,20 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Add response interceptor to handle errors globally
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Clear token and redirect to login on unauthorized
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Helper function to get auth headers
 const getAuthHeaders = () => {
@@ -235,9 +249,41 @@ export const deleteJob = async (id) => {
       method: 'DELETE',
       headers: getAuthHeaders(),
     });
-    return handleResponse(response);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to delete job');
+    }
+    
+    return await response.json();
   } catch (error) {
     console.error('Error deleting job:', error);
+    throw error;
+  }
+};
+
+export const getJobByUrl = async (jobUrl) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/jobs/${jobUrl}`);
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching job by URL:', error);
+    throw error;
+  }
+};
+
+export const applyForJob = async (jobUrl, applicationData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/jobs/${jobUrl}/apply`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(applicationData),
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error applying for job:', error);
     throw error;
   }
 };
@@ -322,13 +368,19 @@ export const deleteSubmission = async (id) => {
 };
 
 // Resume API endpoints
-export const uploadResume = async (formData) => {
+export const uploadResume = async (formData, onProgress) => {
   try {
     const token = localStorage.getItem('token');
     const response = await axios.post(`${API_BASE_URL}/resumes`, formData, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
       },
     });
     return response;
@@ -442,12 +494,32 @@ export const analyzeResumes = async (jobDescription, matchThreshold) => {
   }
 };
 
+export const reextractResumes = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/resumes/reextract`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to reextract resumes');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Reextraction error:', error);
+    throw error;
+  }
+};
+
 const handleError = (error) => {
   if (error.response) {
     // Handle 401 Unauthorized errors
     if (error.response.status === 401) {
       // Clear token and redirect to login
       localStorage.removeItem('token');
+      localStorage.removeItem('user');
       window.location.href = '/login';
       return new Error('Session expired. Please login again.');
     }
@@ -456,6 +528,36 @@ const handleError = (error) => {
     return new Error(message);
   }
   return error;
+};
+
+export const getPublicJob = async (shareableLink) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/jobs/share/${shareableLink}`);
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching public job:', error);
+    throw error;
+  }
+};
+
+export const applyForPublicJob = async (shareableLink, formData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/jobs/share/${shareableLink}/apply`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to submit application');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error applying for job:', error);
+    throw error;
+  }
 };
 
 export default api;

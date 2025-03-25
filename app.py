@@ -24,7 +24,6 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import time
-from waitress import serve
 
 # =============================================
 # Environment Setup and Configuration
@@ -67,6 +66,7 @@ try:
     recruiters_collection = db['recruiters']
     resumes_collection = db['resumes']
     submissions_collection = db['submissions']
+    public_applications_collection = db['public_applications']  # New collection for public job applications
 except Exception as e:
     print(f"Failed to connect to MongoDB: {str(e)}")
     print("Starting Flask server without MongoDB connection. Some features will be unavailable.")
@@ -673,185 +673,93 @@ def get_resumes(current_user):
 @app.route('/api/resumes', methods=['POST'])
 @token_required
 def upload_resume(current_user):
-    """Upload and process a new resume"""
-    results = []  # Initialize results list
+    """Upload and process multiple resumes"""
+    results = []
+    total_files = 0
+
     try:
+        # Check if files are present
         if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
+            return jsonify({
+                'status': 'error', 
+                'error': 'No files provided',
+                'total_files': 0,
+                'results': []
+            }), 400
 
-        files = request.files.getlist('file')  # Get all files
-        if not files or files[0].filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+        files = request.files.getlist('file')
+        total_files = len(files)
 
-        # Process each file
+        # Validate file types
+        valid_extensions = ['.pdf', '.docx', '.doc']
         for file in files:
-            # Validate file extension
             file_ext = os.path.splitext(file.filename)[1].lower()
-            if file_ext not in ['.pdf', '.docx', '.doc']:
+            if file_ext not in valid_extensions:
                 results.append({
-                    'status': 'error',
-                    'error': 'invalid_format',
                     'filename': file.filename,
-                    'message': 'Invalid file format. Please upload PDF or DOCX files only.'
+                    'status': 'error',
+                    'message': f'Invalid file format. Allowed: {", ".join(valid_extensions)}'
                 })
                 continue
 
             try:
                 # Extract text from file
                 resume_text = extract_text_from_file(file)
-                if not resume_text:
-                    results.append({
-                        'status': 'error',
-                        'error': 'text_extraction_failed',
-                        'filename': file.filename,
-                        'message': 'Failed to extract text from file'
-                    })
-                    continue
                 
-                # Extract resume information using Gemini with retry
-                max_retries = 3
-                retry_count = 0
-                resume_info = None
-                valid_email = False
+                # Extract resume information
+                resume_info = extract_resume_info(resume_text)
                 
-                while retry_count < max_retries and not valid_email:
-                    try:
-                        resume_info = extract_resume_info(resume_text)
-                        email = resume_info.get('email', '').strip()
-                        
-                        # Validate email format
-                        if email and re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                            # Check if email already exists
-                            existing_resume = resumes_collection.find_one({
-                                'user_id': str(current_user['_id']),
-                                'email': email
-                            })
-                            
-                            if existing_resume:
-                                # Update existing resume with new information
-                                update_data = {
-                                    'filename': file.filename,
-                                    'content_type': file.content_type,
-                                    'text_content': resume_text,
-                                    'name': resume_info.get('name', existing_resume.get('name', '')),
-                                    'phone_number': resume_info.get('phone_number', existing_resume.get('phone_number', '')),
-                                    'job_title': resume_info.get('current_role', existing_resume.get('job_title', '')),
-                                    'current_job': resume_info.get('current_company', existing_resume.get('current_job', '')),
-                                    'skills': resume_info.get('skills', existing_resume.get('skills', '')),
-                                    'location': resume_info.get('location', existing_resume.get('location', '')),
-                                    'resume_summary': resume_info.get('education', existing_resume.get('resume_summary', '')),
-                                    'experience': resume_info.get('experience_details', existing_resume.get('experience', [])),
-                                    'category': resume_info.get('category', existing_resume.get('category', '')),
-                                    'updated_at': datetime.utcnow(),
-                                    'extraction_retries': retry_count
-                                }
-                                
-                                # Update file data if new file is provided
-                                file.seek(0)
-                                file_data = base64.b64encode(file.read()).decode('utf-8')
-                                update_data['file_data'] = file_data
-                                
-                                resumes_collection.update_one(
-                                    {'_id': existing_resume['_id']},
-                                    {'$set': update_data}
-                                )
-                                
-                                results.append({
-                                    'status': 'success',
-                                    'id': str(existing_resume['_id']),
-                                    'filename': file.filename,
-                                    'name': resume_info.get('name', ''),
-                                    'email': email,
-                                    'skills': resume_info.get('skills', ''),
-                                    'retries': retry_count,
-                                    'message': 'Resume updated successfully'
-                                })
-                                valid_email = True
-                            else:
-                                # Store new resume
-                                file.seek(0)
-                                file_data = base64.b64encode(file.read()).decode('utf-8')
-                                
-                                resume = {
-                                    'user_id': str(current_user['_id']),
-                                    'filename': file.filename,
-                                    'content_type': file.content_type,
-                                    'file_data': file_data,
-                                    'text_content': resume_text,
-                                    'name': resume_info.get('name', ''),
-                                    'email': email,
-                                    'phone_number': resume_info.get('phone_number', ''),
-                                    'job_title': resume_info.get('current_role', ''),
-                                    'current_job': resume_info.get('current_company', ''),
-                                    'skills': resume_info.get('skills', ''),
-                                    'location': resume_info.get('location', ''),
-                                    'resume_summary': resume_info.get('education', ''),
-                                    'experience': resume_info.get('experience_details', []),
-                                    'category': resume_info.get('category', ''),
-                                    'created_at': datetime.utcnow(),
-                                    'updated_at': datetime.utcnow(),
-                                    'extraction_retries': retry_count
-                                }
-                                
-                                result = resumes_collection.insert_one(resume)
-                                
-                                results.append({
-                                    'status': 'success',
-                                    'id': str(result.inserted_id),
-                                    'filename': file.filename,
-                                    'name': resume_info.get('name', ''),
-                                    'email': email,
-                                    'skills': resume_info.get('skills', ''),
-                                    'retries': retry_count,
-                                    'message': 'Resume uploaded successfully'
-                                })
-                                valid_email = True
-                        else:
-                            retry_count += 1
-                            if retry_count == max_retries:
-                                results.append({
-                                    'status': 'error',
-                                    'error': 'invalid_email',
-                                    'filename': file.filename,
-                                    'message': 'Failed to extract valid email after multiple attempts'
-                                })
-                            else:
-                                time.sleep(5)  # Wait 5 seconds before retry
-                                continue
-                                
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count == max_retries:
-                            results.append({
-                                'status': 'error',
-                                'error': 'info_extraction_failed',
-                                'filename': file.filename,
-                                'message': str(e)
-                            })
-                        else:
-                            time.sleep(5)  # Wait 5 seconds before retry
-                            continue
+                # Store file data
+                file.seek(0)
+                file_data = base64.b64encode(file.read()).decode('utf-8')
                 
-                # Add delay between processing each resume
-                time.sleep(5)  # 5 second delay between each resume
+                # Create resume document
+                resume = {
+                    'user_id': str(current_user['_id']),
+                    'filename': file.filename,
+                    'content_type': file.content_type,
+                    'file_data': file_data,
+                    'text_content': resume_text,
+                    **resume_info,
+                    'created_at': datetime.utcnow(),
+                    'updated_at': datetime.utcnow()
+                }
                 
+                # Insert resume
+                result = resumes_collection.insert_one(resume)
+                
+                results.append({
+                    'filename': file.filename,
+                    'status': 'success',
+                    'id': str(result.inserted_id),
+                    'extracted_data': {
+                        'name': resume_info.get('name', 'N/A'),
+                        'email': resume_info.get('email', 'N/A'),
+                        'skills': resume_info.get('skills', 'N/A')
+                    }
+                })
+            
             except Exception as e:
                 results.append({
-                    'status': 'error',
-                    'error': 'processing_failed',
                     'filename': file.filename,
+                    'status': 'error',
                     'message': str(e)
                 })
-        
+
         return jsonify({
-            'total_files': len(files),
-            'results': results
+            'status': 'success',
+            'total_files': total_files,
+            'results': results,
+            'successful_uploads': len([r for r in results if r['status'] == 'success']),
+            'failed_uploads': len([r for r in results if r['status'] == 'error'])
         })
-        
+    
     except Exception as e:
         return jsonify({
-            'error': 'upload_failed',
-            'message': str(e)
+            'status': 'error',
+            'error': str(e),
+            'total_files': total_files,
+            'results': results
         }), 500
 
 @app.route('/api/resumes/<resume_id>/preview', methods=['GET'])
@@ -1158,6 +1066,11 @@ def create_job(current_user):
     if not data.get('title'):
         return jsonify({'error': 'Job title is required'}), 400
     
+    # Generate unique URLs for the job
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    job_url = f"job-{timestamp}-{data['title'].lower().replace(' ', '-')}"
+    shareable_link = f"share-{timestamp}-{data['title'].lower().replace(' ', '-')}"
+    
     job = {
         'title': data.get('title'),
         'location': data.get('location', ''),
@@ -1165,6 +1078,8 @@ def create_job(current_user):
         'visas': data.get('visas', ''),
         'description': data.get('description', ''),
         'client': data.get('client', ''),
+        'url': job_url,
+        'shareable_link': shareable_link,
         'user_id': str(current_user['_id']),
         'created_at': datetime.utcnow(),
         'updated_at': datetime.utcnow()
@@ -1173,9 +1088,164 @@ def create_job(current_user):
     try:
         result = jobs_collection.insert_one(job)
         job['_id'] = str(result.inserted_id)
-        job['id'] = str(result.inserted_id)  # Add id field for frontend compatibility
+        job['id'] = str(result.inserted_id)
         return jsonify(job), 201
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/jobs/share/<shareable_link>', methods=['GET'])
+def get_public_job(shareable_link):
+    """Get public job details by shareable link"""
+    try:
+        job = jobs_collection.find_one({'shareable_link': shareable_link})
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
+        
+        # Only return necessary fields for public view
+        public_job = {
+            'id': str(job['_id']),
+            'title': job['title'],
+            'company': job['client'],
+            'location': job['location'],
+            'description': job['description'],
+            'bill_rate': job['bill_rate'],
+            'visas': job['visas']
+        }
+        
+        return jsonify(public_job)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/jobs/share/<shareable_link>/apply', methods=['POST'])
+def apply_for_public_job(shareable_link):
+    """Submit an application for a public job"""
+    try:
+        print(f"Received application for job with shareable link: {shareable_link}")  # Debug log
+        
+        # Find the job
+        job = jobs_collection.find_one({'shareable_link': shareable_link})
+        if not job:
+            print(f"Job not found for shareable link: {shareable_link}")  # Debug log
+            return jsonify({'error': 'Job not found'}), 404
+
+        # Get form data
+        candidate_name = request.form.get('name')
+        candidate_email = request.form.get('email')
+        candidate_phone = request.form.get('phone')
+        linkedin_url = request.form.get('linkedin_url')
+        candidate_state = request.form.get('state')
+        candidate_country = request.form.get('country')
+        pay_rate = request.form.get('expected_pay_rate')
+        resume_file = request.files.get('resume')
+
+        print(f"Received form data: name={candidate_name}, email={candidate_email}")  # Debug log
+
+        # Validate required fields
+        required_fields = {
+            'name': candidate_name,
+            'email': candidate_email,
+            'state': candidate_state,
+            'country': candidate_country,
+            'expected_pay_rate': pay_rate
+        }
+
+        missing_fields = [field for field, value in required_fields.items() if not value]
+        if missing_fields:
+            print(f"Missing required fields: {missing_fields}")  # Debug log
+            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+
+        # Process resume file if provided
+        resume_id = None
+        if resume_file:
+            try:
+                print("Processing resume file...")  # Debug log
+                # Extract text from resume
+                resume_text = extract_text_from_file(resume_file)
+                
+                # Extract resume information
+                resume_info = extract_resume_info(resume_text)
+                
+                # Store file data
+                resume_file.seek(0)
+                resume_data = base64.b64encode(resume_file.read()).decode('utf-8')
+                
+                # Create resume document
+                resume = {
+                    'filename': resume_file.filename,
+                    'content_type': resume_file.content_type,
+                    'file_data': resume_data,
+                    'text_content': resume_text,
+                    **resume_info,
+                    'created_at': datetime.utcnow(),
+                    'updated_at': datetime.utcnow()
+                }
+                
+                # Insert resume
+                resume_result = resumes_collection.insert_one(resume)
+                resume_id = str(resume_result.inserted_id)
+                print(f"Resume processed successfully with ID: {resume_id}")  # Debug log
+            except Exception as e:
+                print(f"Error processing resume: {str(e)}")  # Debug log
+                return jsonify({'error': f'Failed to process resume file: {str(e)}'}), 400
+
+        # Create public application document
+        public_application = {
+            'job_id': str(job['_id']),
+            'job_title': job['title'],
+            'company': job['client'],
+            'candidate_name': candidate_name,
+            'candidate_email': candidate_email,
+            'candidate_phone': candidate_phone,
+            'linkedin_url': linkedin_url,
+            'candidate_state': candidate_state,
+            'candidate_country': candidate_country,
+            'pay_rate': pay_rate,
+            'resume_id': resume_id,
+            'application_status': 'New',
+            'created_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow()
+        }
+
+        print("Creating public application document...")  # Debug log
+        # Insert public application
+        public_result = public_applications_collection.insert_one(public_application)
+        public_application['_id'] = str(public_result.inserted_id)
+        public_application['id'] = str(public_result.inserted_id)
+
+        # Create submission document for internal tracking
+        submission = {
+            'job_id': str(job['_id']),
+            'user_id': str(job['user_id']),
+            'candidate_name': candidate_name,
+            'candidate_email': candidate_email,
+            'candidate_phone': candidate_phone,
+            'linkedin_url': linkedin_url,
+            'candidate_state': candidate_state,
+            'candidate_country': candidate_country,
+            'pay_rate': pay_rate,
+            'status': 'Submitted',
+            'created_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow()
+        }
+
+        if resume_id:
+            submission['resume_id'] = resume_id
+
+        print("Creating submission document...")  # Debug log
+        # Insert submission
+        result = submissions_collection.insert_one(submission)
+        submission['_id'] = str(result.inserted_id)
+        submission['id'] = str(result.inserted_id)
+
+        print("Application submitted successfully")  # Debug log
+        return jsonify({
+            'message': 'Application submitted successfully',
+            'application': public_application,
+            'submission': submission
+        }), 201
+
+    except Exception as e:
+        print(f"Error submitting application: {str(e)}")  # Debug log
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/jobs/<job_id>', methods=['PUT'])
@@ -1401,5 +1471,4 @@ def ats_score(current_user):
 # Application Entry Point
 # =============================================
 if __name__ == '__main__':
-    # Remove development server
-    serve(app, host='0.0.0.0', port=5000, threads=4)
+    app.run(debug=True, port=5000) 
