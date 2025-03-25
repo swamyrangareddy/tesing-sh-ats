@@ -365,14 +365,16 @@ const Jobs = () => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this job?')) {
+    if (window.confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
       try {
+        setError('');
         await deleteJob(id);
         setSuccessMessage('Job deleted successfully');
         await fetchJobs();
       } catch (error) {
         console.error('Error deleting job:', error);
-        setError('Failed to delete job');
+        setError(error.message || 'Failed to delete job. Please try again.');
+        setSuccessMessage('');
       }
     }
   };
