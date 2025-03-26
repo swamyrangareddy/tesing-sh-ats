@@ -25,6 +25,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import time
 from waitress import serve
+from werkzeug.utils import secure_filename
 
 # =============================================
 # Environment Setup and Configuration
@@ -47,6 +48,7 @@ CORS(app, resources={
 
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'SECRET_KEY')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', '/app/uploads')
 
 
 
@@ -531,10 +533,49 @@ def delete_recruiter(current_user, recruiter_id):
 @token_required
 def get_submissions(current_user):
     """Get all submissions for the current user"""
-    submissions = list(submissions_collection.find({'user_id': str(current_user['_id'])}))
-    for submission in submissions:
-        submission['_id'] = str(submission['_id'])
-    return jsonify(submissions)
+    try:
+        print(f"Fetching submissions for user: {current_user['_id']}")  # Debug log
+        
+        # Get all submissions for the current user
+        submissions = list(submissions_collection.find({'user_id': str(current_user['_id'])}))
+        print(f"Found {len(submissions)} submissions")  # Debug log
+        
+        # Convert ObjectId to string and clean up response
+        for submission in submissions:
+            # Convert ObjectId to string
+            submission['_id'] = str(submission['_id'])
+            submission['id'] = str(submission['_id'])
+            
+            # Ensure all required fields exist with default values
+            submission.setdefault('candidate_name', '')
+            submission.setdefault('candidate_email', '')
+            submission.setdefault('candidate_phone', '')
+            submission.setdefault('candidate_city', '')
+            submission.setdefault('candidate_state', '')
+            submission.setdefault('candidate_country', '')
+            submission.setdefault('status', 'Submitted')
+            submission.setdefault('created_at', datetime.utcnow())
+            submission.setdefault('updated_at', datetime.utcnow())
+            
+            # Remove any binary data or non-serializable fields
+            if 'file_data' in submission:
+                del submission['file_data']
+            if 'resume_data' in submission:
+                del submission['resume_data']
+            if 'text_content' in submission:
+                del submission['text_content']
+            
+            # Convert datetime objects to ISO format strings
+            if 'created_at' in submission:
+                submission['created_at'] = submission['created_at'].isoformat()
+            if 'updated_at' in submission:
+                submission['updated_at'] = submission['updated_at'].isoformat()
+        
+        print("Submissions processed successfully")  # Debug log
+        return jsonify(submissions)
+    except Exception as e:
+        print(f"Error in get_submissions: {str(e)}")  # Error log
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/submissions', methods=['POST'])
 @token_required
@@ -1213,134 +1254,130 @@ def get_public_job(shareable_link):
 
 @app.route('/api/jobs/share/<shareable_link>/apply', methods=['POST'])
 def apply_for_public_job(shareable_link):
-    """Submit an application for a public job"""
     try:
-        print(f"Received application for job with shareable link: {shareable_link}")  # Debug log
-        
-        # Find the job
+        # Get the job by shareable link
         job = jobs_collection.find_one({'shareable_link': shareable_link})
         if not job:
-            print(f"Job not found for shareable link: {shareable_link}")  # Debug log
             return jsonify({'error': 'Job not found'}), 404
 
-        # Get form data
-        candidate_name = request.form.get('name')
-        candidate_email = request.form.get('email')
-        candidate_phone = request.form.get('phone')
-        linkedin_url = request.form.get('linkedin_url')
-        candidate_state = request.form.get('state')
-        candidate_country = request.form.get('country')
-        pay_rate = request.form.get('expected_pay_rate')
-        resume_file = request.files.get('resume')
+        # Create uploads directory if it doesn't exist
+        uploads_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'public_resumes')
+        os.makedirs(uploads_dir, exist_ok=True)
 
-        print(f"Received form data: name={candidate_name}, email={candidate_email}")  # Debug log
+        # Get the resume file
+        if 'resume' not in request.files:
+            return jsonify({'error': 'No resume file provided'}), 400
+        
+        resume_file = request.files['resume']
+        if resume_file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
 
-        # Validate required fields
-        required_fields = {
-            'name': candidate_name,
-            'email': candidate_email,
-            'state': candidate_state,
-            'country': candidate_country,
-            'expected_pay_rate': pay_rate
-        }
+        # Generate a unique filename while preserving the original extension
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        original_filename = secure_filename(resume_file.filename)
+        file_extension = os.path.splitext(original_filename)[1]
+        unique_filename = f"{timestamp}_{original_filename}"
+        resume_path = os.path.join('public_resumes', unique_filename)
 
-        missing_fields = [field for field, value in required_fields.items() if not value]
-        if missing_fields:
-            print(f"Missing required fields: {missing_fields}")  # Debug log
-            return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+        # Save the resume file
+        resume_file.save(os.path.join(uploads_dir, unique_filename))
 
-        # Process resume file if provided
-        resume_id = None
-        if resume_file:
-            try:
-                print("Processing resume file...")  # Debug log
-                # Extract text from resume
-                resume_text = extract_text_from_file(resume_file)
-                
-                # Extract resume information
-                resume_info = extract_resume_info(resume_text)
-                
-                # Store file data
-                resume_file.seek(0)
-                resume_data = base64.b64encode(resume_file.read()).decode('utf-8')
-                
-                # Create resume document
-                resume = {
-                    'filename': resume_file.filename,
-                    'content_type': resume_file.content_type,
-                    'file_data': resume_data,
-                    'text_content': resume_text,
-                    **resume_info,
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow()
-                }
-                
-                # Insert resume
-                resume_result = resumes_collection.insert_one(resume)
-                resume_id = str(resume_result.inserted_id)
-                print(f"Resume processed successfully with ID: {resume_id}")  # Debug log
-            except Exception as e:
-                print(f"Error processing resume: {str(e)}")  # Debug log
-                return jsonify({'error': f'Failed to process resume file: {str(e)}'}), 400
-
-        # Create public application document
-        public_application = {
-            'job_id': str(job['_id']),
-            'job_title': job['title'],
-            'company': job['client'],
-            'candidate_name': candidate_name,
-            'candidate_email': candidate_email,
-            'candidate_phone': candidate_phone,
-            'linkedin_url': linkedin_url,
-            'candidate_state': candidate_state,
-            'candidate_country': candidate_country,
-            'pay_rate': pay_rate,
-            'resume_id': resume_id,
-            'application_status': 'New',
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
-        }
-
-        print("Creating public application document...")  # Debug log
-        # Insert public application
-        public_result = public_applications_collection.insert_one(public_application)
-        public_application['_id'] = str(public_result.inserted_id)
-        public_application['id'] = str(public_result.inserted_id)
-
-        # Create submission document for internal tracking
-        submission = {
-            'job_id': str(job['_id']),
-            'user_id': str(job['user_id']),
-            'candidate_name': candidate_name,
-            'candidate_email': candidate_email,
-            'candidate_phone': candidate_phone,
-            'linkedin_url': linkedin_url,
-            'candidate_state': candidate_state,
-            'candidate_country': candidate_country,
-            'pay_rate': pay_rate,
+        # Create new public application
+        new_application = {
+            'job_id': job['_id'],
+            'name': request.form.get('name'),
+            'email': request.form.get('email'),
+            'phone': request.form.get('phone'),
+            'linkedin_url': request.form.get('linkedin_url'),
+            'state': request.form.get('state'),
+            'country': request.form.get('country'),
+            'expected_pay_rate': request.form.get('expected_pay_rate'),
             'status': 'Submitted',
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow()
+            'resume_path': resume_path,
+            'created_at': datetime.now(),
+            'updated_at': datetime.now()
         }
 
-        if resume_id:
-            submission['resume_id'] = resume_id
+        result = public_applications_collection.insert_one(new_application)
+        new_application['_id'] = str(result.inserted_id)
+        new_application['id'] = str(result.inserted_id)
 
-        print("Creating submission document...")  # Debug log
-        # Insert submission
-        result = submissions_collection.insert_one(submission)
-        submission['_id'] = str(result.inserted_id)
-        submission['id'] = str(result.inserted_id)
-
-        print("Application submitted successfully")  # Debug log
         return jsonify({
             'message': 'Application submitted successfully',
-            'application': public_application,
-            'submission': submission
+            'application_id': new_application['id']
         }), 201
 
     except Exception as e:
-        print(f"Error submitting application: {str(e)}")  # Debug log
+        print(f"Error in apply_for_public_job: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/public_applications', methods=['GET'])
+@token_required
+def get_public_applications(current_user):
+    try:
+        # Get all jobs created by the current user
+        user_jobs = jobs_collection.find({'user_id': str(current_user['_id'])}, {'_id': 1})
+        job_ids = [str(job['_id']) for job in user_jobs]
+        
+        # Get all public applications for these jobs
+        applications = public_applications_collection.find({'job_id': {'$in': job_ids}})
+        
+        # Format the response
+        result = []
+        for app in applications:
+            job = jobs_collection.find_one({'_id': ObjectId(app['job_id'])})
+            result.append({
+                'id': app['_id'],
+                'job_id': app['job_id'],
+                'job_title': job.get('title', 'Unknown Job'),
+                'company_name': job.get('client', 'Unknown Company'),
+                'name': app['name'],
+                'email': app['email'],
+                'phone': app['phone'],
+                'linkedin_url': app['linkedin_url'],
+                'state': app['state'],
+                'country': app['country'],
+                'expected_pay_rate': app['expected_pay_rate'],
+                'status': app['status'],
+                'resume_path': app['resume_path'],
+                'created_at': app['created_at'].isoformat() if app['created_at'] else None,
+                'updated_at': app['updated_at'].isoformat() if app['updated_at'] else None
+            })
+        
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in get_public_applications: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/public_applications/<application_id>/resume', methods=['GET'])
+@token_required
+def download_public_resume(current_user, application_id):
+    try:
+        # Get the application
+        application = public_applications_collection.find_one({'_id': ObjectId(application_id)})
+        if not application:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        # Verify the user has access to this application
+        job = jobs_collection.find_one({'_id': ObjectId(application['job_id'])})
+        if not job or job['user_id'] != str(current_user['_id']):
+            return jsonify({'error': 'Unauthorized'}), 403
+        
+        if not os.path.exists(application['resume_path']):
+            return jsonify({'error': 'Resume file not found'}), 404
+
+        # Get the original filename from the path
+        original_filename = os.path.basename(application['resume_path'])
+        
+        # Send the file
+        return send_file(
+            application['resume_path'],
+            as_attachment=True,
+            download_name=original_filename
+        )
+
+    except Exception as e:
+        print(f"Error in download_public_resume: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/jobs/<job_id>', methods=['PUT'])
@@ -1564,10 +1601,37 @@ def ats_score(current_user):
         print(f"Error in ats_score: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/public_applications/<application_id>', methods=['DELETE'])
+@token_required
+def delete_public_application(current_user, application_id):
+    """Delete a public application"""
+    try:
+        # First get the application to verify ownership
+        application = public_applications_collection.find_one({'_id': ObjectId(application_id)})
+        if not application:
+            return jsonify({'error': 'Application not found'}), 404
+            
+        # Verify the job belongs to the current user
+        job = jobs_collection.find_one({
+            '_id': ObjectId(application['job_id']),
+            'user_id': str(current_user['_id'])
+        })
+        
+        if not job:
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        # Delete the application
+        result = public_applications_collection.delete_one({'_id': ObjectId(application_id)})
+        if result.deleted_count == 0:
+            return jsonify({'error': 'Failed to delete application'}), 500
+            
+        return jsonify({'message': 'Application deleted successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # =============================================
 # Application Entry Point
 # =============================================
 if __name__ == '__main__':
-    # Remove development server
     #serve(app, host='0.0.0.0', port=5000, threads=4)
     app.run(debug=True, port=5000) 

@@ -25,6 +25,8 @@ import {
   Grid,
   Tooltip,
   Stack,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -39,10 +41,11 @@ import {
   Work as WorkIcon,
   Person as PersonIcon,
   Info as InfoIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { styled, useTheme, alpha } from '@mui/material/styles';
 import NoData from '../components/NoData';
-import { getSubmissions, createSubmission, updateSubmission, deleteSubmission, getJobs, getRecruiters } from '../services/api';
+import { getSubmissions, createSubmission, updateSubmission, deleteSubmission, getJobs, getRecruiters, getPublicApplications, downloadPublicResume } from '../services/api';
 
 const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -488,22 +491,6 @@ const Submissions = () => {
     }
   };
 
-  const fetchResumes = async () => {
-    try {
-      const response = await fetch('http://localhost:5000/api/resumes', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to fetch resumes');
-      const data = await response.json();
-      setResumes(data);
-    } catch (error) {
-      console.error('Error fetching resumes:', error);
-      setError('Failed to fetch resumes');
-    }
-  };
-
   const handleOpen = (submission = null) => {
     if (submission) {
       setEditMode(true);
@@ -530,7 +517,6 @@ const Submissions = () => {
       setSearchResults([]);
       setUploadedFileName('');
       setSelectedResume(null);
-      fetchResumes();
     }
     setOpen(true);
   };
@@ -718,18 +704,19 @@ const Submissions = () => {
 
       const data = await response.json();
       
-      if (data.id) {
+      if (data.results && data.results.length > 0) {
+        const extractedData = data.results[0];
         // Update form data with extracted information
         setFormData(prev => ({
           ...prev,
-          candidate_name: data.name || '',
-          candidate_email: data.email || '',
-          candidate_phone: data.phone_number || '',
-          candidate_city: data.location?.split(',')[0]?.trim() || '',
-          candidate_state: data.location?.split(',')[1]?.trim() || '',
-          candidate_country: data.location?.split(',')[2]?.trim() || '',
+          candidate_name: extractedData.name || '',
+          candidate_email: extractedData.email || '',
+          candidate_phone: extractedData.phone_number || '',
+          candidate_city: extractedData.location?.split(',')[0]?.trim() || '',
+          candidate_state: extractedData.location?.split(',')[1]?.trim() || '',
+          candidate_country: extractedData.location?.split(',')[2]?.trim() || '',
           status: 'Submitted',
-          resume_id: data.id
+          resume_id: extractedData.id
         }));
         
         setSuccess('Resume processed and details extracted successfully');
@@ -771,6 +758,23 @@ const Submissions = () => {
   const handleViewClose = () => {
     setViewDialogOpen(false);
     setViewSubmission(null);
+  };
+
+  const handleDownloadResume = async (applicationId) => {
+    try {
+      const blob = await downloadPublicResume(applicationId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resume_${applicationId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading resume:', error);
+      setError('Failed to download resume');
+    }
   };
 
   return (

@@ -499,29 +499,51 @@ export const getPublicJob = async (shareableLink) => {
     console.error('Error getting public job:', error);
     throw error;
   }
-  }
+}
 
-  export const applyForPublicJob = async (shareableLink, applicationData) => {
-    try {
-      console.log('Submitting application with data:', applicationData);
+export const applyForPublicJob = async (shareableLink, applicationData) => {
+  try {
+    console.log('Submitting application with data:', applicationData);
 
-      const response = await fetch(`${API_BASE_URL}/jobs/share/${shareableLink}/apply`, {
-        method : 'POST',
-        body : applicationData,
-      });
+    const response = await fetch(`${API_BASE_URL}/jobs/share/${shareableLink}/apply`, {
+      method : 'POST',
+      body : applicationData,
+    });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Server error response:', errorData);
-        throw new Error(errorData.error || 'Failed to submit application');
-      }
-
-      const result = await response.json();
-      console.log('Application submitted successfully:', result);
-      return result;
-    } catch (error) {
-      console.error("Error submitting application:", error);
-      throw error;
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Server error response:', errorData);
+      throw new Error(errorData.error || 'Failed to submit application');
     }
-  };
 
+    const result = await response.json();
+    console.log('Application submitted successfully:', result);
+    return result;
+  } catch (error) {
+    console.error("Error submitting application:", error);
+    throw error;
+  }
+};
+
+// Public Applications
+export const getPublicApplications = async () => {
+  try {
+    const response = await api.get('/public_applications');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching public applications:', error);
+    throw error;
+  }
+};
+
+export const downloadPublicResume = async (applicationId) => {
+  try {
+    const response = await api.get(`/public_applications/${applicationId}/resume`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error downloading public resume:', error);
+    throw error;
+  }
+};
