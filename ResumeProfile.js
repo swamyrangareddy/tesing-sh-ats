@@ -196,8 +196,8 @@ const ResumeProfile = () => {
         phone: resumeData.phone_number || 'N/A',
         location: resumeData.location || 'N/A',
         linkedin: resumeData.linkedin || 'N/A',
-        experience: resumeData.experience && resumeData.experience.length > 0 
-          ? `${resumeData.experience[0].duration || 'N/A'} Experience` 
+        experience: Array.isArray(resumeData.experience) && resumeData.experience.length > 0 
+          ? `${resumeData.experience[0].duration || 'N/A'} Experience`
           : 'N/A',
         currentCTC: resumeData.current_job || 'N/A',
         expectedCTC: resumeData.expected_salary || 'N/A',
@@ -206,9 +206,11 @@ const ResumeProfile = () => {
         skills: resumeData.skills 
           ? (typeof resumeData.skills === 'string' 
               ? resumeData.skills.split(',').map(skill => ({ name: skill.trim(), level: 70 }))
-              : resumeData.skills.map(skill => ({ name: skill, level: 70 })))
+              : Array.isArray(resumeData.skills) 
+                ? resumeData.skills.map(skill => ({ name: skill, level: 70 }))
+                : [])
           : [],
-        workExperience: resumeData.experience 
+        workExperience: Array.isArray(resumeData.experience) 
           ? resumeData.experience.map(exp => ({
               role: exp.position || 'N/A',
               company: exp.company || 'N/A',
@@ -217,9 +219,9 @@ const ResumeProfile = () => {
               achievements: exp.description ? exp.description.split('\n').filter(line => line.trim()) : ['No specific achievements listed']
             }))
           : [],
-        education: resumeData.education || [],
-        certifications: resumeData.certifications || [], 
-        languages: resumeData.languages || []
+        education: Array.isArray(resumeData.education) ? resumeData.education : [],
+        certifications: Array.isArray(resumeData.certifications) ? resumeData.certifications : [],
+        languages: Array.isArray(resumeData.languages) ? resumeData.languages : []
       };
       setProfile(transformedProfile);
     }

@@ -24,6 +24,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import time
+from waitress import serve
 
 # =============================================
 # Environment Setup and Configuration
@@ -47,13 +48,15 @@ CORS(app, resources={
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'SECRET_KEY')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+
+
 # =============================================
 # Database Connection Setup
 # =============================================
 # MongoDB connection
 db = None
 try:
-    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/ats')
+    MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/')
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     # Verify connection
     client.server_info()
@@ -66,7 +69,7 @@ try:
     recruiters_collection = db['recruiters']
     resumes_collection = db['resumes']
     submissions_collection = db['submissions']
-    public_applications_collection = db['public_applications']  # New collection for public job applications
+    public_applications_collection = db['public_applications']
 except Exception as e:
     print(f"Failed to connect to MongoDB: {str(e)}")
     print("Starting Flask server without MongoDB connection. Some features will be unavailable.")
@@ -673,93 +676,185 @@ def get_resumes(current_user):
 @app.route('/api/resumes', methods=['POST'])
 @token_required
 def upload_resume(current_user):
-    """Upload and process multiple resumes"""
-    results = []
-    total_files = 0
-
+    """Upload and process a new resume"""
+    results = []  # Initialize results list
     try:
-        # Check if files are present
         if 'file' not in request.files:
-            return jsonify({
-                'status': 'error', 
-                'error': 'No files provided',
-                'total_files': 0,
-                'results': []
-            }), 400
+            return jsonify({'error': 'No file provided'}), 400
 
-        files = request.files.getlist('file')
-        total_files = len(files)
+        files = request.files.getlist('file')  # Get all files
+        if not files or files[0].filename == '':
+            return jsonify({'error': 'No file selected'}), 400
 
-        # Validate file types
-        valid_extensions = ['.pdf', '.docx', '.doc']
+        # Process each file
         for file in files:
+            # Validate file extension
             file_ext = os.path.splitext(file.filename)[1].lower()
-            if file_ext not in valid_extensions:
+            if file_ext not in ['.pdf', '.docx', '.doc']:
                 results.append({
-                    'filename': file.filename,
                     'status': 'error',
-                    'message': f'Invalid file format. Allowed: {", ".join(valid_extensions)}'
+                    'error': 'invalid_format',
+                    'filename': file.filename,
+                    'message': 'Invalid file format. Please upload PDF or DOCX files only.'
                 })
                 continue
 
             try:
                 # Extract text from file
                 resume_text = extract_text_from_file(file)
+                if not resume_text:
+                    results.append({
+                        'status': 'error',
+                        'error': 'text_extraction_failed',
+                        'filename': file.filename,
+                        'message': 'Failed to extract text from file'
+                    })
+                    continue
                 
-                # Extract resume information
-                resume_info = extract_resume_info(resume_text)
+                # Extract resume information using Gemini with retry
+                max_retries = 3
+                retry_count = 0
+                resume_info = None
+                valid_email = False
                 
-                # Store file data
-                file.seek(0)
-                file_data = base64.b64encode(file.read()).decode('utf-8')
+                while retry_count < max_retries and not valid_email:
+                    try:
+                        resume_info = extract_resume_info(resume_text)
+                        email = resume_info.get('email', '').strip()
+                        
+                        # Validate email format
+                        if email and re.match(r"[^@]+@[^@]+\.[^@]+", email):
+                            # Check if email already exists
+                            existing_resume = resumes_collection.find_one({
+                                'user_id': str(current_user['_id']),
+                                'email': email
+                            })
+                            
+                            if existing_resume:
+                                # Update existing resume with new information
+                                update_data = {
+                                    'filename': file.filename,
+                                    'content_type': file.content_type,
+                                    'text_content': resume_text,
+                                    'name': resume_info.get('name', existing_resume.get('name', '')),
+                                    'phone_number': resume_info.get('phone_number', existing_resume.get('phone_number', '')),
+                                    'job_title': resume_info.get('current_role', existing_resume.get('job_title', '')),
+                                    'current_job': resume_info.get('current_company', existing_resume.get('current_job', '')),
+                                    'skills': resume_info.get('skills', existing_resume.get('skills', '')),
+                                    'location': resume_info.get('location', existing_resume.get('location', '')),
+                                    'resume_summary': resume_info.get('education', existing_resume.get('resume_summary', '')),
+                                    'experience': resume_info.get('experience_details', existing_resume.get('experience', [])),
+                                    'category': resume_info.get('category', existing_resume.get('category', '')),
+                                    'updated_at': datetime.utcnow(),
+                                    'extraction_retries': retry_count
+                                }
+                                
+                                # Update file data if new file is provided
+                                file.seek(0)
+                                file_data = base64.b64encode(file.read()).decode('utf-8')
+                                update_data['file_data'] = file_data
+                                
+                                resumes_collection.update_one(
+                                    {'_id': existing_resume['_id']},
+                                    {'$set': update_data}
+                                )
+                                
+                                results.append({
+                                    'status': 'success',
+                                    'id': str(existing_resume['_id']),
+                                    'filename': file.filename,
+                                    'name': resume_info.get('name', ''),
+                                    'email': email,
+                                    'skills': resume_info.get('skills', ''),
+                                    'retries': retry_count,
+                                    'message': 'Resume updated successfully'
+                                })
+                                valid_email = True
+                            else:
+                                # Store new resume
+                                file.seek(0)
+                                file_data = base64.b64encode(file.read()).decode('utf-8')
+                                
+                                resume = {
+                                    'user_id': str(current_user['_id']),
+                                    'filename': file.filename,
+                                    'content_type': file.content_type,
+                                    'file_data': file_data,
+                                    'text_content': resume_text,
+                                    'name': resume_info.get('name', ''),
+                                    'email': email,
+                                    'phone_number': resume_info.get('phone_number', ''),
+                                    'job_title': resume_info.get('current_role', ''),
+                                    'current_job': resume_info.get('current_company', ''),
+                                    'skills': resume_info.get('skills', ''),
+                                    'location': resume_info.get('location', ''),
+                                    'resume_summary': resume_info.get('education', ''),
+                                    'experience': resume_info.get('experience_details', []),
+                                    'category': resume_info.get('category', ''),
+                                    'created_at': datetime.utcnow(),
+                                    'updated_at': datetime.utcnow(),
+                                    'extraction_retries': retry_count
+                                }
+                                
+                                result = resumes_collection.insert_one(resume)
+                                
+                                results.append({
+                                    'status': 'success',
+                                    'id': str(result.inserted_id),
+                                    'filename': file.filename,
+                                    'name': resume_info.get('name', ''),
+                                    'email': email,
+                                    'skills': resume_info.get('skills', ''),
+                                    'retries': retry_count,
+                                    'message': 'Resume uploaded successfully'
+                                })
+                                valid_email = True
+                        else:
+                            retry_count += 1
+                            if retry_count == max_retries:
+                                results.append({
+                                    'status': 'error',
+                                    'error': 'invalid_email',
+                                    'filename': file.filename,
+                                    'message': 'Failed to extract valid email after multiple attempts'
+                                })
+                            else:
+                                time.sleep(5)  # Wait 5 seconds before retry
+                                continue
+                                
+                    except Exception as e:
+                        retry_count += 1
+                        if retry_count == max_retries:
+                            results.append({
+                                'status': 'error',
+                                'error': 'info_extraction_failed',
+                                'filename': file.filename,
+                                'message': str(e)
+                            })
+                        else:
+                            time.sleep(5)  # Wait 5 seconds before retry
+                            continue
                 
-                # Create resume document
-                resume = {
-                    'user_id': str(current_user['_id']),
-                    'filename': file.filename,
-                    'content_type': file.content_type,
-                    'file_data': file_data,
-                    'text_content': resume_text,
-                    **resume_info,
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow()
-                }
+                # Add delay between processing each resume
+                time.sleep(5)  # 5 second delay between each resume
                 
-                # Insert resume
-                result = resumes_collection.insert_one(resume)
-                
-                results.append({
-                    'filename': file.filename,
-                    'status': 'success',
-                    'id': str(result.inserted_id),
-                    'extracted_data': {
-                        'name': resume_info.get('name', 'N/A'),
-                        'email': resume_info.get('email', 'N/A'),
-                        'skills': resume_info.get('skills', 'N/A')
-                    }
-                })
-            
             except Exception as e:
                 results.append({
-                    'filename': file.filename,
                     'status': 'error',
+                    'error': 'processing_failed',
+                    'filename': file.filename,
                     'message': str(e)
                 })
-
+        
         return jsonify({
-            'status': 'success',
-            'total_files': total_files,
-            'results': results,
-            'successful_uploads': len([r for r in results if r['status'] == 'success']),
-            'failed_uploads': len([r for r in results if r['status'] == 'error'])
+            'total_files': len(files),
+            'results': results
         })
-    
+        
     except Exception as e:
         return jsonify({
-            'status': 'error',
-            'error': str(e),
-            'total_files': total_files,
-            'results': results
+            'error': 'upload_failed',
+            'message': str(e)
         }), 500
 
 @app.route('/api/resumes/<resume_id>/preview', methods=['GET'])
@@ -1337,6 +1432,8 @@ def delete_job(current_user, job_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+
+
 # =============================================
 # ATS (Applicant Tracking System) Routes
 # =============================================
@@ -1471,4 +1568,6 @@ def ats_score(current_user):
 # Application Entry Point
 # =============================================
 if __name__ == '__main__':
+    # Remove development server
+    #serve(app, host='0.0.0.0', port=5000, threads=4)
     app.run(debug=True, port=5000) 
