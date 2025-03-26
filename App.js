@@ -17,6 +17,7 @@ import ResumeUpload from './pages/ResumeUpload';
 import ATSScore from './pages/ATSScore';
 import Search from './pages/Search';
 import ResumeProfile from './pages/ResumeProfile';
+import PublicJobApplication from './pages/PublicJobApplication';
 
 // Components
 import Navbar from './components/Navbar';
@@ -264,10 +265,11 @@ const ProtectedRoute = ({ children }) => {
 const AppLayout = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const location = useLocation();
+  const isPublicJobPage = location.pathname.startsWith('/jobs/share/');
 
   return (
     <>
-      {isAuthenticated && location.pathname !== '/' && <Navbar />}
+      {isAuthenticated && !isPublicJobPage && <Navbar />}
       <AnimatePresence mode="wait">
         {children}
       </AnimatePresence>
@@ -350,13 +352,15 @@ const AppRoutes = () => {
         />
         
         <Route
-          path="/resume-profile/:id"
+          path="/resume-profile/"
           element={
             <ProtectedRoute>
               <ResumeProfile />
             </ProtectedRoute>
           }
         />
+        
+        <Route path="/jobs/share/:shareableLink" element={<PublicJobApplication />} />
       </Routes>
     </AnimatePresence>
   );
