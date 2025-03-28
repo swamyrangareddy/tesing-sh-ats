@@ -30,13 +30,14 @@ import {
 import { styled } from '@mui/material/styles';
 import { Link as RouterLink } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import Lottie from 'lottie-react';
+import animationData from '../assets/animations/Animation - 1743156441748.json';
+import animationData2 from '../assets/animations/Animation - 1743158348579.json';
+import animationData3 from '../assets/animations/Animation - 1743158522363.json';
 
 const HeroSection = styled(Box)(({ theme }) => ({
-  backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.7)), url("https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1500")',
-  backgroundSize: 'cover',
-  backgroundPosition: 'center',
-  backgroundAttachment: 'fixed',
-  height: '100vh',
+  background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 90%)',
+  minHeight: '90vh',
   display: 'flex',
   alignItems: 'center',
   position: 'relative',
@@ -47,7 +48,8 @@ const HeroSection = styled(Box)(({ theme }) => ({
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.4) 0%, rgba(147, 51, 234, 0.4) 100%)',
+
+    opacity: 0.1,
   },
 }));
 
@@ -60,120 +62,104 @@ const HeroContent = styled(Container)(({ theme }) => ({
 
 const FeatureCard = styled(motion(Card))(({ theme }) => ({
   height: '100%',
-  background: 'rgba(255, 255, 255, 0.95)',
-  backdropFilter: 'blur(20px)',
-  border: '1px solid rgba(255, 255, 255, 0.2)',
-  borderRadius: theme.spacing(3),
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  overflow: 'visible',
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  background: '#ffffff',
+  borderRadius: theme.spacing(2),
+  transition: 'all 0.3s ease',
+  border: '1px solid rgba(25, 118, 210, 0.1)',
+  boxShadow: '0 4px 20px rgba(25, 118, 210, 0.08)',
   '&:hover': {
-    transform: 'translateY(-12px)',
-    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.12)',
-    border: '1px solid rgba(255, 255, 255, 0.3)',
+    transform: 'translateY(-8px)',
+    boxShadow: '0 12px 28px rgba(25, 118, 210, 0.15)',
+    border: '1px solid rgba(25, 118, 210, 0.2)',
   },
 }));
-
-const IconWrapper = styled(Box)(({ theme, color }) => ({
+const IconWrapper = styled(Box)(({ theme }) => ({
+  width: 60,
+  height: 60,
+  borderRadius: '15px',
+  background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 90%)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: 84,
-  height: 84,
-  borderRadius: '24px',
-  backgroundColor: color || theme.palette.primary.main,
-  marginBottom: theme.spacing(3),
-  transform: 'rotate(45deg) translateY(-10px)',
-  boxShadow: `0 8px 24px ${color}40 || rgba(0, 0, 0, 0.1)`,
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  margin: '0 auto', // Center the icon horizontally
+  marginBottom: theme.spacing(2),
   '& svg': {
-    fontSize: 36,
+    fontSize: 28,
     color: '#ffffff',
-    transform: 'rotate(-45deg)',
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  },
-  '&:hover': {
-    transform: 'rotate(45deg) translateY(-14px)',
-    boxShadow: `0 12px 28px ${color}60 || rgba(0, 0, 0, 0.15)`,
-    '& svg': {
-      transform: 'rotate(-45deg) scale(1.1)',
-    },
   },
 }));
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
-  background: 'transparent',
-  boxShadow: 'none',
-  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-  backdropFilter: 'blur(8px)',
-  height: '80px',
+  background: '#F0F8FF',
+  boxShadow: '0 2px 12px rgba(25, 118, 210, 0.2)',
+  height: '70px',
   display: 'flex',
   justifyContent: 'center',
-  transition: 'all 0.3s ease',
-  '&.scrolled': {
-    background: 'rgba(33, 33, 33, 0.95)',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-  },
+  position: 'fixed',
+  zIndex: 1200,
 }));
 
 const StyledToolbar = styled(Toolbar)(({ theme }) => ({
   maxWidth: '1200px',
   width: '100%',
   margin: '0 auto',
-  padding: '0 24px',
+  padding: theme.spacing(0, 3),
+  height: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
 }));
 
 const Logo = styled(Typography)(({ theme }) => ({
   color: theme.palette.common.white,
   fontWeight: 800,
-  fontSize: '2rem',
+  fontSize: '1.8rem',
   textDecoration: 'none',
-  background: 'linear-gradient(45deg, #fff 30%, #E3F2FD 90%)',
-  WebkitBackgroundClip: 'text',
-  WebkitTextFillColor: 'transparent',
   letterSpacing: '-0.02em',
-  textShadow: '0 2px 10px rgba(0,0,0,0.2)',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  transition: 'all 0.3s ease',
   '&:hover': {
-    transform: 'scale(1.05)',
-    filter: 'brightness(1.2)',
+
+    transform: 'scale(1.02)',
+    textShadow: '0 2px 8px rgba(255,255,255,0.2)',
   },
 }));
 
 const NavButton = styled(Button)(({ theme }) => ({
   marginLeft: theme.spacing(2),
-  borderRadius: '16px',
-  padding: '12px 28px',
+  borderRadius: '8px',
+  padding: '8px 24px',
   textTransform: 'none',
-  fontSize: '1rem',
+  fontSize: '0.95rem',
   fontWeight: 600,
   letterSpacing: '0.01em',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  transition: 'all 0.3s ease',
   '&.login': {
-    backgroundColor: 'transparent',
-    border: '2px solid rgba(255, 255, 255, 0.8)',
+    background: theme.palette.primary.main,
     color: '#fff',
-    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(25, 118, 210, 0.1)',
     '&:hover': {
-      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      backgroundColor: '#fff',
+      border: '2px solid #1976d2',
+      color: theme.palette.primary.main,
       transform: 'translateY(-2px)',
-      boxShadow: '0 8px 24px rgba(255, 255, 255, 0.2)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
     },
   },
   '&.signup': {
-    background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
-    color: '#fff',
-    boxShadow: '0 8px 24px rgba(37, 99, 235, 0.25)',
+    background:  theme.palette.primary.main,
+    color:'#fff',
     '&:hover': {
+      backgroundColor: '#fff',
+      border: '2px solid #1976d2',
+      color: theme.palette.primary.main,
       transform: 'translateY(-2px)',
-      boxShadow: '0 12px 28px rgba(37, 99, 235, 0.35)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
     },
   },
 }));
 
 const GradientSection = styled(Box)(({ theme }) => ({
-  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
-  color: theme.palette.text.primary,
+  background: 'linear-gradient(180deg, #ffffff 0%, #f5f9ff 90%)',
   padding: theme.spacing(15, 0),
   position: 'relative',
   '&::before': {
@@ -182,53 +168,42 @@ const GradientSection = styled(Box)(({ theme }) => ({
     top: 0,
     left: 0,
     right: 0,
-    height: '120px',
+    height: '80px',
     background: 'linear-gradient(to bottom, #ffffff, transparent)',
-  },
-  '&::after': {
-    content: '""',
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: '120px',
-    background: 'linear-gradient(to top, #ffffff, transparent)',
   },
 }));
 
 const ProcessStep = styled(motion(Paper))(({ theme }) => ({
   padding: theme.spacing(4),
-  background: 'rgba(255, 255, 255, 0.95)',
-  backdropFilter: 'blur(20px)',
-  border: '1px solid rgba(255, 255, 255, 0.2)',
-  borderRadius: theme.spacing(3),
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  textAlign: 'center',
-  height: '100%',
-  position: 'relative',
-  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+  background: '#ffffff',
+  borderRadius: theme.spacing(2),
+  border: '1px solid rgba(25, 118, 210, 0.1)',
+  boxShadow: '0 4px 20px rgba(25, 118, 210, 0.08)',
   '&:hover': {
-    transform: 'translateY(-12px)',
-    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.12)',
-    border: '1px solid rgba(255, 255, 255, 0.3)',
+    transform: 'translateY(-8px)',
+    boxShadow: '0 12px 28px rgba(25, 118, 210, 0.15)',
+    border: '1px solid rgba(25, 118, 210, 0.2)',
     '& .step-number': {
-      transform: 'scale(1.1)',
+      color: '#1976d2',
       opacity: 0.15,
     },
   },
-  '& .step-number': {
-    position: 'absolute',
-    top: -30,
-    left: -20,
-    fontSize: '8rem',
-    fontWeight: 800,
-    opacity: 0.1,
-    color: theme.palette.primary.main,
-    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    zIndex: 0,
+}));
+
+
+const HeroButton = styled(Button)(({ theme }) => ({
+  borderRadius: '30px',
+  padding: '12px 36px',
+  fontSize: '1.1rem',
+  fontWeight: 600,
+  textTransform: 'none',
+  background: '#1976d2',
+  color: '#ffffff',
+  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+  '&:hover': {
+    background: '#f8f9fa',
+    transform: 'translateY(-2px)',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
   },
 }));
 
@@ -325,7 +300,7 @@ const Home = () => {
     <Box>
       <StyledAppBar position="fixed">
         <StyledToolbar>
-          <Logo component={RouterLink} to="/" sx={{ flexGrow: 1 }}>
+          <Logo component={RouterLink} to="/" sx={{ flexGrow: 1 , color: theme.palette.primary.main}}>
             ATS System
           </Logo>
           <Box sx={{ display: 'flex', gap: 2 }}>
@@ -351,63 +326,62 @@ const Home = () => {
 
       <HeroSection>
         <HeroContent>
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-          >
-            <Typography
-              variant={isMobile ? 'h3' : 'h1'}
-              component="h1"
-              gutterBottom
-              sx={{ 
-                fontWeight: 800,
-                textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
-                color: 'white',
-                mb: 3,
-                letterSpacing: '-1px'
-              }}
-            >
-              Transform Your Hiring Process
-            </Typography>
-            <Typography
-              variant={isMobile ? 'h6' : 'h4'}
-              sx={{ 
-                mb: 6, 
-                maxWidth: '800px', 
-                mx: 'auto',
-                textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
-                color: 'white',
-                fontWeight: 300
-              }}
-            >
-              Our advanced Applicant Tracking System combines AI technology with intuitive design to streamline your recruitment workflow.
-            </Typography>
-            <Button
-              component={RouterLink}
-              to="/signup"
-              variant="contained"
-              size="large"
-              sx={{ 
-                borderRadius: '20px',
-                padding: '16px 48px',
-                fontSize: '1.2rem',
-                fontWeight: 600,
-                textTransform: 'none',
-                background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
-                boxShadow: '0 8px 24px rgba(37, 99, 235, 0.25)',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                letterSpacing: '0.01em',
-                '&:hover': {
-                  transform: 'translateY(-3px)',
-                  boxShadow: '0 12px 28px rgba(37, 99, 235, 0.35)',
-                  background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
-                },
-              }}
-            >
-              Get Started
-            </Button>
-          </motion.div>
+          <Grid container alignItems="center" spacing={4}>
+            <Grid item xs={12} md={6}>
+              <Lottie 
+                animationData={animationData} 
+                style={{ width: '100%', maxWidth: '400px', margin: '0 auto' }} 
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8 }}
+              >
+                <Typography
+                  variant={isMobile ? 'h4' : 'h3'}
+                  component="h1"
+                  gutterBottom
+                  sx={{ 
+                    fontWeight: 800,
+                    textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+                    color: 'white',
+                    mb: 3,
+                    letterSpacing: '-1px'
+                  }}
+                >
+                  Transform Your Hiring Process
+                </Typography>
+                <Typography
+                  variant={isMobile ? 'h6' : 'h4'}
+                  sx={{ 
+                    mb: 6, 
+                    maxWidth: '800px', 
+                    mx: 'auto',
+                    textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
+                    color: 'white',
+                    fontWeight: 200,
+                    fontSize: '1.8rem',
+                  }}
+                >
+                  Our advanced Applicant Tracking System combines AI technology with intuitive design to streamline your recruitment workflow.
+                </Typography>
+                <HeroButton
+                  component={RouterLink}
+                  to="/signup"
+                  variant="contained"
+                  size="large"
+                  sx={{
+                    backgroundColor: theme.palette.primary.main,
+                    color: 'white',
+                  }}
+                >
+                  Get Started
+                </HeroButton>
+              </motion.div>
+            </Grid>
+          </Grid>
         </HeroContent>
       </HeroSection>
 
@@ -430,6 +404,10 @@ const Home = () => {
           >
             Key Features
           </Typography>
+          <Lottie 
+            animationData={animationData2} 
+            style={{ width: '300px', margin: '0 auto', marginBottom: '20px' }} 
+          />
           <Grid container spacing={4}>
             {mainFeatures.map((feature, index) => (
               <Grid item xs={12} sm={6} md={3} key={index}>
@@ -472,7 +450,7 @@ const Home = () => {
               sx={{ 
                 mb: 6,
                 fontWeight: 800,
-                background: 'linear-gradient(135deg, #1E293B 0%, #334155 100%)',
+                background: 'linear-gradient(135deg, #1E293B 0%, #334155 90%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 letterSpacing: '-0.02em',
@@ -480,6 +458,10 @@ const Home = () => {
             >
               Advanced ATS Features
             </Typography>
+            <Lottie 
+              animationData={animationData3} 
+              style={{ width: '300px', margin: '0 auto', marginBottom: '20px' }} 
+            />
             <Grid container spacing={4}>
               {atsFeatures.map((feature, index) => (
                 <Grid item xs={12} md={4} key={index}>
@@ -487,6 +469,8 @@ const Home = () => {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: index * 0.1 }}
+                    whileHover={{ scale: 1.05 }}
+                    elevation={3}
                   >
                     <CardContent sx={{ textAlign: 'center' }}>
                       <IconWrapper sx={{ bgcolor: feature.color }}>
@@ -542,10 +526,10 @@ const Home = () => {
                   <IconWrapper>
                     {step.icon}
                   </IconWrapper>
-                  <Typography variant="h6" component="h3" gutterBottom>
+                  <Typography variant="h6" sx={{textAlign: 'center'}} component="h3" gutterBottom>
                     {step.title}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" sx={{textAlign: 'center'}} color="text.secondary">
                     {step.description}
                   </Typography>
                   <Typography
@@ -635,4 +619,4 @@ const Home = () => {
   );
 };
 
-export default Home; 
+export default Home;
