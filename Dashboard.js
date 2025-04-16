@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Container,
   Grid,
-  Card,
-  CardContent,
   Typography,
   Box,
   List,
@@ -29,9 +27,7 @@ import {
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
 import NoData from '../components/NoData';
-import StatsCard from '../components/StatsCard';
-import ActivityCard from '../components/ActivityCard';
-import { getRecruiters, getJobs, getSubmissions, getResumes } from '../services/api';
+import { getRecruiters, getJobs, getSubmissions, getResumes, getPublicApplications } from '../services/api';
 
 const StyledContainer = styled(Container)(({ theme }) => ({
   paddingTop: theme.spacing(4),
@@ -96,19 +92,20 @@ const StyledChip = styled(Chip)(({ theme, status }) => ({
   height: 24,
   fontSize: '0.75rem',
   fontWeight: 500,
+  
   backgroundColor: 
     status === 'Hired' ? 'rgba(46, 204, 113, 0.1)' :
     status === 'Rejected' ? 'rgba(231, 76, 60, 0.1)' :
     status === 'Shortlisted' ? 'rgba(52, 152, 219, 0.1)' :
     status === 'In Review' ? 'rgba(241, 196, 15, 0.1)' :
-    status === 'Submitted' ? 'rgba(149, 165, 166, 0.1)' :
+    status === 'Submitted' ? '#E0F7FA' :
     'rgba(189, 195, 199, 0.1)',
   color:
     status === 'Hired' ? '#27ae60' :
     status === 'Rejected' ? '#c0392b' :
     status === 'Shortlisted' ? '#2980b9' :
     status === 'In Review' ? '#f39c12' :
-    status === 'Submitted' ? '#7f8c8d' :
+    status === 'Submitted' ? '#00838F' :
     '#95a5a6',
   border: `1px solid ${
     status === 'Hired' ? 'rgba(46, 204, 113, 0.2)' :
@@ -137,9 +134,20 @@ const StyledStatusChip = styled(Chip)(({ theme, status }) => {
   const getStatusColor = () => {
     switch (status?.toLowerCase()) {
       case 'open':
-        return '#4caf50';
+        return 'rgba(46, 204, 113, 0.2)';
       case 'closed':
-        return '#f44336';
+        return 'rgba(231, 76, 60, 0.15)';
+      default:
+        return '#757575';
+    }
+  };
+
+  const getStatusTextColor = () => {
+    switch (status?.toLowerCase()) {
+      case 'open':
+        return '#27ae60';
+      case 'closed':
+        return '#c0392b';
       default:
         return '#757575';
     }
@@ -147,10 +155,13 @@ const StyledStatusChip = styled(Chip)(({ theme, status }) => {
 
   return {
     backgroundColor: getStatusColor(),
-    color: '#fff',
+    color: getStatusTextColor(),
     fontWeight: 500,
     fontSize: '0.75rem',
-    textTransform: 'capitalize'
+    textTransform: 'capitalize',
+    width: '80px',
+    borderRadius: theme.spacing(1),
+    border: `0.5px solid ${getStatusColor()}`,
   };
 });
 
@@ -161,6 +172,7 @@ const Dashboard = () => {
     totalJobs: 0,
     totalSubmissions: 0,
     totalResumes: 0,
+    totalpublicApplications: 0,
   });
   const [recentJobs, setRecentJobs] = useState([]);
   const [recentSubmissions, setRecentSubmissions] = useState([]);
@@ -176,31 +188,45 @@ const Dashboard = () => {
 
   const fetchStats = async () => {
     try {
-      const [recruiters, jobs, submissions, resumesResponse] = await Promise.all([
+      setLoading(true);
+      const [recruitersResponse, jobsResponse, submissionsResponse, resumesResponse] = await Promise.all([
         getRecruiters(),
         getJobs(),
         getSubmissions(),
         getResumes()
       ]);
 
+      // Extract data from responses, handling different response formats
+      const recruiters = recruitersResponse.data || recruitersResponse || [];
+      const jobs = jobsResponse.data || jobsResponse || [];
+      const submissions = submissionsResponse.data || submissionsResponse || [];
+      const resumes = resumesResponse.data?.resumes || resumesResponse?.resumes || resumesResponse || [];
+
       setStats({
         totalRecruiters: recruiters.length,
         totalJobs: jobs.length,
         totalSubmissions: submissions.length,
-        totalResumes: resumesResponse.resumes.length,
+        totalResumes: resumes.length,
       });
     } catch (err) {
-      setError('Failed to load dashboard statistics');
       console.error('Error fetching stats:', err);
+      setError('Failed to load dashboard statistics');
+    } finally {
+      setLoading(false);
     }
   };
 
   const fetchRecentActivities = async () => {
     try {
-      const [jobs, submissions] = await Promise.all([
+      setLoading(true);
+      const [jobsResponse, submissionsResponse] = await Promise.all([
         getJobs(),
         getSubmissions()
       ]);
+
+      // Extract data from responses, handling different response formats
+      const jobs = jobsResponse.data || jobsResponse || [];
+      const submissions = submissionsResponse.data || submissionsResponse || [];
 
       // Sort jobs by created_at in descending order and take latest 5
       const sortedJobs = jobs
@@ -237,19 +263,26 @@ const Dashboard = () => {
       setRecentJobs(sortedJobs);
       setRecentSubmissions(sortedSubmissions);
     } catch (err) {
-      setError('Failed to load recent activities');
       console.error('Error fetching recent activities:', err);
+      setError('Failed to load recent activities');
+    } finally {
+      setLoading(false);
     }
   };
 
   const fetchResumes = async () => {
     try {
-      const resumes = await getResumes();
-      console.log('Fetched resumes:', resumes);
-      setResumes(Array.isArray(resumes) ? resumes : []);
+      setLoading(true);
+      const resumesResponse = await getResumes();
+      
+      // Extract resumes data from the response, handling different response formats
+      const resumesData = resumesResponse.data?.resumes || resumesResponse?.resumes || resumesResponse || [];
+      
+      console.log('Fetched resumes:', resumesData);
+      setResumes(Array.isArray(resumesData) ? resumesData : []);
     } catch (err) {
-      setError('Failed to load resumes');
       console.error('Error fetching resumes:', err);
+      setError('Failed to load resumes');
     } finally {
       setLoading(false);
     }

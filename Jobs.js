@@ -45,6 +45,7 @@ import { styled, useTheme } from '@mui/material/styles';
 import NoData from '../components/NoData';
 import { getJobs, createJob, updateJob, deleteJob, getJobByUrl, applyForJob } from '../services/api';
 import { Link } from 'react-router-dom';
+import useDebounce from '../hooks/useDebounce';
 
 const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -117,6 +118,34 @@ const StyledTextField = styled(TextField)(({ theme }) => ({
   },
 }));
 
+const StyledDescription = styled(Box)(({ theme }) => ({
+  '& .MuiInputBase-root': {
+    backgroundColor: '#fff',
+    minHeight: '200px',
+    padding: theme.spacing(2),
+    '& .MuiInputBase-input': {
+      height: 'auto',
+      overflow: 'auto'
+    }
+  },
+  '& .MuiOutlinedInput-root': {
+    '&:hover fieldset': {
+      borderColor: theme.palette.primary.main,
+    },
+  }
+}));
+
+const DisplayDescription = styled(Box)(({ theme }) => ({
+  whiteSpace: 'pre-wrap',
+  '& ul, & ol': {
+    marginLeft: theme.spacing(2),
+    paddingLeft: theme.spacing(2),
+  },
+  '& li': {
+    marginBottom: theme.spacing(1),
+  }
+}));
+
 const ActionButton = styled(IconButton)(({ theme }) => ({
   transition: 'all 0.3s ease',
   padding: theme.spacing(1),
@@ -125,32 +154,42 @@ const ActionButton = styled(IconButton)(({ theme }) => ({
   },
 }));
 
-const StyledDescription = styled(Typography)(({ theme }) => ({
-  maxWidth: '300px',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  color: theme.palette.text.secondary,
-}));
-
 const StyledStatusChip = styled(Chip)(({ theme, status }) => {
   const getStatusColor = () => {
     switch (status?.toLowerCase()) {
       case 'open':
-        return '#4caf50';
+        return 'rgba(46, 204, 113, 0.1)';
       case 'closed':
-        return '#f44336';
+        return 'rgba(231, 76, 60, 0.1)';
       default:
         return '#757575';
     }
   };
 
+  const getTextColor = () => {
+    switch (status?.toLowerCase()) {
+      case 'open':
+        return '#27ae60';
+      case 'closed':
+        return '#c0392b';
+      default:
+        return '#95a5a6';
+    }
+  };
+
   return {
+    borderRadius: theme.spacing(1),
     backgroundColor: getStatusColor(),
-    color: '#fff',
+    color: getTextColor(),
+    border : `0.5px solid ${getStatusColor()}`,
     fontWeight: 500,
     fontSize: '0.75rem',
     textTransform: 'capitalize',
+    display: 'inline-block',
+    fontSize: '0.875rem',
+    textAlign: 'center',
+    minWidth: '80px',
+    height: '24px',
   };
 });
 
@@ -199,11 +238,13 @@ const Jobs = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms delay
   const [openDialog, setOpenDialog] = useState(false);
   const [openDetailDialog, setOpenDetailDialog] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [loading, setLoading] = useState(false);
   const [applicationData, setApplicationData] = useState({
     email: '',
     name: '',
@@ -244,6 +285,25 @@ const Jobs = () => {
     setStatus(event.target.value);
   };
 
+  const fetchJobs = async () => {
+    try {
+      setLoading(true);
+      const response = await getJobs();
+      const jobsData = response.data || response || [];
+      const jobsArray = Array.isArray(jobsData) ? jobsData : [];
+      const sortedJobs = jobsArray.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setJobs(sortedJobs);
+      setFilteredJobs(sortedJobs);
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      setError('Failed to fetch jobs. Please try again later.');
+      setJobs([]);
+      setFilteredJobs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchJobs();
   }, []);
@@ -251,24 +311,14 @@ const Jobs = () => {
   useEffect(() => {
     const filtered = jobs.filter(
       (job) =>
-        job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.client?.toLowerCase().includes(searchTerm.toLowerCase())
+        job.title?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        job.description?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        job.location?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        job.client?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
     );
     setFilteredJobs(filtered);
-  }, [searchTerm, jobs]);
-
-  const fetchJobs = async () => {
-    try {
-      const data = await getJobs();
-      setJobs(data);
-      setFilteredJobs(data);
-    } catch (error) {
-      console.error('Error fetching jobs:', error);
-      setError('Failed to fetch jobs. Please try again later.');
-    }
-  };
+    setPage(0); // Reset to first page when filtering
+  }, [debouncedSearchTerm, jobs]);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -321,15 +371,57 @@ const Jobs = () => {
     });
   };
 
+  const handleDescriptionChange = (event) => {
+    const value = event.target.value;
+    // Auto-format bullet points
+    const formattedValue = value.split('\n').map(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('*') || trimmed.startsWith('-')) {
+        return '• ' + trimmed.substring(1).trim();
+      }
+      return line;
+    }).join('\n');
+    
+    setJobFormData({
+      ...jobFormData,
+      description: formattedValue
+    });
+  };
+
+  const formatDescription = (text) => {
+    if (!text) return '';
+    // Convert plain text bullet points to HTML list
+    const lines = text.split('\n');
+    let inList = false;
+    const formattedLines = lines.map(line => {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith('•') || trimmedLine.startsWith('-')) {
+        if (!inList) {
+          inList = true;
+          return `<ul><li>${trimmedLine.substring(1).trim()}</li>`;
+        }
+        return `<li>${trimmedLine.substring(1).trim()}</li>`;
+      } else {
+        if (inList) {
+          inList = false;
+          return `</ul>${trimmedLine}`;
+        }
+        return trimmedLine;
+      }
+    });
+    if (inList) {
+      formattedLines.push('</ul>');
+    }
+    return formattedLines.join('\n');
+  };
+
   const handleSubmit = async () => {
     try {
-      // Validate required fields
       if (!jobFormData.title) {
         setError('Job Title is required');
         return;
       }
 
-      // Ensure status is set and valid
       const jobData = {
         ...jobFormData,
         status: jobFormData.status || 'open'
@@ -421,7 +513,8 @@ const Jobs = () => {
   };
 
   const handleShareClick = (job) => {
-    setSelectedShareableLink(`${window.location.origin}/jobs/share/${job.shareable_link}`);
+    const shareableLink = `${window.location.origin}/share/${job.shareable_link}`;
+    setSelectedShareableLink(shareableLink);
     setShareDialogOpen(true);
   };
 
@@ -435,7 +528,6 @@ const Jobs = () => {
     }
   };
 
-  // Render method for job details
   const renderJobDetails = () => {
     if (!selectedJob) return null;
 
@@ -502,7 +594,11 @@ const Jobs = () => {
                 backgroundColor: 'rgba(0,0,0,0.05)', 
                 borderRadius: 2 
               }}>
-                <Typography variant="body1">{selectedJob.description}</Typography>
+                <DisplayDescription 
+                  dangerouslySetInnerHTML={{ 
+                    __html: formatDescription(selectedJob.description) 
+                  }} 
+                />
               </Box>
             </Grid>
           )}
@@ -575,15 +671,14 @@ const Jobs = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell>Created at</TableCell>
                 <TableCell>Job Title</TableCell>
                 <TableCell>Location</TableCell>
                 <TableCell>Bill Rate</TableCell>
-                <TableCell>Visas</TableCell>
-                <TableCell>Description</TableCell>
                 <TableCell>Client</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Share</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -592,16 +687,15 @@ const Jobs = () => {
                 .map((job) => (
                   <StyledTableRow key={job.id}>
                     <TableCell>
-                      <TableCell>
-                        {job.title}
-                      </TableCell>
+                      {new Date(job.created_at).toLocaleDateString('en-US', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                      })}
                     </TableCell>
+                    <TableCell>{job.title}</TableCell>
                     <TableCell>{job.location}</TableCell>
                     <TableCell>{job.bill_rate}</TableCell>
-                    <TableCell>{job.visas}</TableCell>
-                    <TableCell>
-                      <StyledDescription>{job.description}</StyledDescription>
-                    </TableCell>
                     <TableCell>{job.client}</TableCell>
                     <TableCell>
                       <StyledStatusChip 
@@ -611,12 +705,12 @@ const Jobs = () => {
                       />
                     </TableCell>
                     <TableCell>
-                      <ShareButton
+                      <IconButton
                         onClick={() => handleShareClick(job)}
-                        sx={{ color: theme.palette.primary.main }}
+                        color="primary"
                       >
                         <ShareIcon />
-                      </ShareButton>
+                      </IconButton>
                     </TableCell>
                     <TableCell align="right">
                       <ActionButton
@@ -705,6 +799,7 @@ const Jobs = () => {
               value={jobFormData.bill_rate}
               onChange={handleInputChange}
               fullWidth
+              sx={{ mb: 2 }}
             />
             <TextField
               name="visas"
@@ -712,16 +807,29 @@ const Jobs = () => {
               value={jobFormData.visas}
               onChange={handleInputChange}
               fullWidth
+              sx={{ mb: 2 }}
             />
-            <TextField
-              name="description"
-              label="Description"
-              value={jobFormData.description}
-              onChange={handleInputChange}
-              multiline
-              rows={4}
-              fullWidth
-            />
+            <StyledDescription>
+              <TextField
+                name="description"
+                label="Job Description"
+                value={jobFormData.description}
+                onChange={handleDescriptionChange}
+                multiline
+                minRows={8}
+                maxRows={15}
+                fullWidth
+                variant="outlined"
+                sx={{
+                  '& .MuiInputBase-input': {
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'monospace',
+                    fontSize: '0.9rem',
+                    lineHeight: '1.5'
+                  }
+                }}
+              />
+            </StyledDescription>
             <TextField
               name="client"
               label="Client"
@@ -802,6 +910,7 @@ const Jobs = () => {
             />
             <TextField
               label="Phone"
+              maxLength={10}
               value={applicationFormData.phone}
               onChange={(e) => setApplicationFormData({ ...applicationFormData, phone: e.target.value })}
               fullWidth
@@ -871,16 +980,25 @@ const Jobs = () => {
             <Typography variant="subtitle2" gutterBottom>
               Share this link on social media or with candidates:
             </Typography>
-            <ShareLink>
-              <Typography variant="body2">{selectedShareableLink}</Typography>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1,
+              p: 1,
+              bgcolor: 'background.default',
+              borderRadius: 1
+            }}>
+              <Typography variant="body2" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {selectedShareableLink}
+              </Typography>
               <IconButton
                 onClick={handleCopyLink}
                 size="small"
-                sx={{ color: copySuccess ? 'success.main' : 'primary.main' }}
+                color={copySuccess ? 'success' : 'primary'}
               >
                 <CopyIcon />
               </IconButton>
-            </ShareLink>
+            </Box>
             {copySuccess && (
               <Typography
                 variant="caption"

@@ -25,8 +25,6 @@ import {
   Grid,
   Tooltip,
   Stack,
-  Tabs,
-  Tab,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -41,11 +39,11 @@ import {
   Work as WorkIcon,
   Person as PersonIcon,
   Info as InfoIcon,
-  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { styled, useTheme, alpha } from '@mui/material/styles';
 import NoData from '../components/NoData';
 import { getSubmissions, createSubmission, updateSubmission, deleteSubmission, getJobs, getRecruiters, getPublicApplications, downloadPublicResume } from '../services/api';
+import useDebounce from '../hooks/useDebounce';
 
 const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -260,7 +258,7 @@ const FormSection = styled(Box)(({ theme }) => ({
 }));
 
 const ActionButton = styled(Button)(({ theme, variant }) => ({
-  borderRadius: theme.spacing(2),
+  borderRadius: theme.spacing(1.5),
   padding: theme.spacing(1.2, 3),
   textTransform: 'none',
   fontSize: '0.95rem',
@@ -300,14 +298,14 @@ const StyledStatus = styled(Typography)(({ status, theme }) => ({
     status === 'Rejected' ? 'rgba(231, 76, 60, 0.1)' :
     status === 'Shortlisted' ? 'rgba(52, 152, 219, 0.1)' :
     status === 'In Review' ? 'rgba(241, 196, 15, 0.1)' :
-    status === 'Submitted' ? 'rgba(149, 165, 166, 0.1)' :
+    status === 'Submitted' ? '#E0F7FA' :
     'rgba(189, 195, 199, 0.1)',
   color:
     status === 'Hired' ? '#27ae60' :
     status === 'Rejected' ? '#c0392b' :
     status === 'Shortlisted' ? '#2980b9' :
     status === 'In Review' ? '#f39c12' :
-    status === 'Submitted' ? '#7f8c8d' :
+    status === 'Submitted' ? '#00838F' :
     '#95a5a6',
   border: `1px solid ${
     status === 'Hired' ? 'rgba(46, 204, 113, 0.2)' :
@@ -411,6 +409,7 @@ const Submissions = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms delay
   const [formData, setFormData] = useState({
     job_id: '',
     recruiter_id: '',
@@ -425,8 +424,9 @@ const Submissions = () => {
     status: '',
     notes: '',
   });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
   const [uploadMode, setUploadMode] = useState('select');
   const [resumes, setResumes] = useState([]);
   const [selectedResume, setSelectedResume] = useState(null);
@@ -438,6 +438,27 @@ const Submissions = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewSubmission, setViewSubmission] = useState(null);
 
+  const fetchSubmissions = async () => {
+    try {
+      setLoading(true);
+      const response = await getSubmissions();
+      const submissionsData = response.data || response || [];
+      const submissionsArray = Array.isArray(submissionsData) ? submissionsData : [];
+      const sortedSubmissions = submissionsArray.sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
+      setSubmissions(sortedSubmissions);
+      setFilteredSubmissions(sortedSubmissions);
+    } catch (error) {
+      console.error('Error fetching submissions:', error);
+      setError('Failed to load submissions');
+      setSubmissions([]);
+      setFilteredSubmissions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchSubmissions();
     fetchJobs();
@@ -446,48 +467,38 @@ const Submissions = () => {
 
   useEffect(() => {
     const filtered = submissions.filter(
-      (submission) => {
-        const candidateName = submission?.candidate_name?.toLowerCase() || '';
-        const candidateEmail = submission?.candidate_email?.toLowerCase() || '';
-        const jobTitle = getJobTitle(submission?.job_id, jobs)?.toLowerCase() || '';
-        const recruiterName = getRecruiterName(submission?.recruiter_id, recruiters)?.toLowerCase() || '';
-        const searchTermLower = searchTerm.toLowerCase();
-        
-        return candidateName.includes(searchTermLower) ||
-               candidateEmail.includes(searchTermLower) ||
-               jobTitle.includes(searchTermLower) ||
-               recruiterName.includes(searchTermLower);
-      }
+      (submission) =>
+        submission.candidate_name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        submission.candidate_email?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        submission.job_title?.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        submission.recruiter_name?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
     );
     setFilteredSubmissions(filtered);
-    setPage(0);
-  }, [searchTerm, submissions, jobs, recruiters]);
-
-  const fetchSubmissions = async () => {
-    try {
-      const data = await getSubmissions();
-      setSubmissions(data);
-    } catch (error) {
-      console.error('Error fetching submissions:', error);
-      setError('Failed to load submissions');
-    }
-  };
+    setPage(0); // Reset to first page when filtering
+  }, [debouncedSearchTerm, submissions]);
 
   const fetchJobs = async () => {
     try {
-      const data = await getJobs();
-      setJobs(data);
+      const response = await getJobs();
+      const jobsData = response.data || response || [];
+      const jobsArray = Array.isArray(jobsData) ? jobsData : [];
+      setJobs(jobsArray);
     } catch (error) {
       console.error('Error fetching jobs:', error);
+      setError('Failed to load jobs');
+      setJobs([]);
     }
   };
 
   const fetchRecruiters = async () => {
     try {
-      const data = await getRecruiters();
-      setRecruiters(data);
+      const response = await getRecruiters();
+      const recruitersData = response.data || response || [];
+      const recruitersArray = Array.isArray(recruitersData) ? recruitersData : [];
+      setRecruiters(recruitersArray);
     } catch (error) {
       console.error('Error fetching recruiters:', error);
+      setRecruiters([]);
     }
   };
 
@@ -510,7 +521,7 @@ const Submissions = () => {
         candidate_country: '',
         visa: '',
         pay_rate: '',
-        status: 'Submitted',
+        status: '',
         notes: '',
       });
       setSearchEmail('');
@@ -593,13 +604,13 @@ const Submissions = () => {
         // For update, we use JSON
         submissionData.updated_at = new Date().toISOString();
         await updateSubmission(selectedSubmission._id, submissionData);
-        setSuccess('Submission updated successfully');
+        setSuccessMessage('Submission updated successfully');
       } else {
         // For create, we use FormData
         submissionData.created_at = new Date().toISOString();
         submissionData.updated_at = new Date().toISOString();
         await createSubmission(submissionData);
-        setSuccess('Submission added successfully');
+        setSuccessMessage('Submission added successfully');
       }
 
       handleClose();
@@ -616,7 +627,7 @@ const Submissions = () => {
     }
     try {
       await deleteSubmission(id);
-      setSuccess('Submission deleted successfully');
+      setSuccessMessage('Submission deleted successfully');
       await fetchSubmissions();
     } catch (error) {
       console.error('Error deleting submission:', error);
@@ -678,6 +689,7 @@ const Submissions = () => {
   };
 
   const handleResumeUpload = async (event) => {
+    event.preventDefault();
     const file = event.target.files[0];
     if (!file) return;
 
@@ -719,7 +731,7 @@ const Submissions = () => {
           resume_id: extractedData.id
         }));
         
-        setSuccess('Resume processed and details extracted successfully');
+        setSuccessMessage('Resume processed and details extracted successfully');
       } else {
         setError('No data could be extracted from the resume');
       }
@@ -746,7 +758,7 @@ const Submissions = () => {
         status: 'Submitted'
       }));
       setSelectedResume(resume);
-      setSuccess('Candidate details loaded from database');
+      setSuccessMessage('Candidate details loaded from database');
     }
   };
 
@@ -780,17 +792,17 @@ const Submissions = () => {
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Snackbar
-        open={!!error || !!success}
+        open={!!error || !!successMessage}
         autoHideDuration={6000}
-        onClose={() => { setError(''); setSuccess(''); }}
+        onClose={() => { setError(null); setSuccessMessage(''); }}
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <Alert
-          onClose={() => { setError(''); setSuccess(''); }}
+          onClose={() => { setError(null); setSuccessMessage(''); }}
           severity={error ? 'error' : 'success'}
           sx={{ width: '100%' }}
         >
-          {error || success}
+          {error || successMessage}
         </Alert>
       </Snackbar>
 
@@ -836,15 +848,16 @@ const Submissions = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Job</TableCell>
-                <TableCell>Candidate Name</TableCell>
-                <TableCell>Candidate Email</TableCell>
-                <TableCell>Recruiter</TableCell>
-                <TableCell>Location</TableCell>
+                <TableCell align="center">Created at</TableCell>
+                <TableCell align="center">Job</TableCell>
+                <TableCell align="center">Candidate Name</TableCell>
+                <TableCell align="center">Candidate Email</TableCell>
+                <TableCell align="center">Recruiter</TableCell>
+                {/* <TableCell>Location</TableCell>
                 <TableCell>Visa</TableCell>
-                <TableCell>Pay Rate</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell>Pay Rate</TableCell> */}
+                <TableCell align="center">Status</TableCell>
+                <TableCell align="center">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -852,13 +865,21 @@ const Submissions = () => {
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((submission) => (
                 <StyledTableRow key={submission._id}>
+                  <TableCell>
+                    {new Date(submission.created_at).toLocaleDateString('en-US', {
+                      month: 'long',
+                      day: 'numeric',
+                      year: 'numeric',
+
+                    })}
+                  </TableCell>
                   <TableCell>{getJobTitle(submission.job_id, jobs)}</TableCell>
                   <TableCell>{submission.candidate_name}</TableCell>
                   <TableCell>{submission.candidate_email}</TableCell>
                   <TableCell>{getRecruiterName(submission.recruiter_id, recruiters)}</TableCell>
-                  <TableCell>{`${submission.candidate_city}, ${submission.candidate_state}`}</TableCell>
+                  {/* <TableCell>{`${submission.candidate_city}, ${submission.candidate_state}`}</TableCell>
                   <TableCell>{submission.visa}</TableCell>
-                  <TableCell>{submission.pay_rate}</TableCell>
+                  <TableCell>{submission.pay_rate}</TableCell> */}
                   <TableCell>
                     <StyledStatus status={submission.status}>
                       {submission.status}
@@ -1076,10 +1097,9 @@ const Submissions = () => {
                 name="recruiter_id"
                 value={formData.recruiter_id}
                 onChange={handleChange}
-                required
+                
                 fullWidth
-                error={!formData.recruiter_id}
-                helperText={!formData.recruiter_id ? "Please select a recruiter" : ""}
+               
               >
                 {recruiters.map((recruiter) => (
                   <MenuItem key={recruiter.id} value={recruiter.id}>
@@ -1088,7 +1108,7 @@ const Submissions = () => {
                 ))}
               </StyledTextField>
               <StyledTextField
-                label="Candidate Name"
+                label="Name"
                 name="candidate_name"
                 value={formData.candidate_name}
                 onChange={handleChange}
@@ -1096,7 +1116,7 @@ const Submissions = () => {
                 fullWidth
               />
               <StyledTextField
-                label="Candidate Email"
+                label="Email"
                 name="candidate_email"
                 value={formData.candidate_email}
                 onChange={handleChange}
@@ -1104,14 +1124,14 @@ const Submissions = () => {
                 fullWidth
               />
               <StyledTextField
-                label="Candidate Phone"
+                label="Phone"
                 name="candidate_phone"
                 value={formData.candidate_phone}
                 onChange={handleChange}
                 fullWidth
               />
               <StyledTextField
-                label="Candidate City"
+                label="City"
                 name="candidate_city"
                 value={formData.candidate_city}
                 onChange={handleChange}
@@ -1119,7 +1139,7 @@ const Submissions = () => {
                 fullWidth
               />
               <StyledTextField
-                label="Candidate State"
+                label="State"
                 name="candidate_state"
                 value={formData.candidate_state}
                 onChange={handleChange}
@@ -1127,7 +1147,7 @@ const Submissions = () => {
                 fullWidth
               />
               <StyledTextField
-                label="Candidate Country"
+                label="Country"
                 name="candidate_country"
                 value={formData.candidate_country}
                 onChange={handleChange}

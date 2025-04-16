@@ -8,21 +8,16 @@ import {
   IconButton,
   Grid,
   Chip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   TextField,
-  Divider,
   Card,
   CardContent,
   Avatar,
-  Tooltip,
   Alert,
   Snackbar,
   Stack,
-  Rating,
   LinearProgress,
+  Tooltip,
+  Divider,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -36,15 +31,18 @@ import {
   Phone as PhoneIcon,
   Description as DescriptionIcon,
   Language as LanguageIcon,
-  Star as StarIcon,
   LinkedIn as LinkedInIcon,
   AttachFile as AttachFileIcon,
-  Code as CodeIcon,
-  Build as BuildIcon,
+  Person as PersonIcon,
+  Cancel as CancelIcon,
+  Business as BusinessIcon,
+  AccessTime as AccessTimeIcon,
+  FiberManualRecord as FiberManualRecordIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const ProfileContainer = styled(Container)(({ theme }) => ({
   marginTop: theme.spacing(4),
@@ -85,10 +83,10 @@ const StyledAvatar = styled(Avatar)(({ theme }) => ({
 
 const SkillChip = styled(Chip)(({ theme }) => ({
   margin: theme.spacing(0.5),
-  backgroundColor: theme.palette.primary.light,
+  backgroundColor: theme.palette.primary.main,
   color: 'white',
   '&:hover': {
-    backgroundColor: theme.palette.primary.main,
+    backgroundColor: theme.palette.primary.light,
     transform: 'translateY(-2px)',
     transition: 'transform 0.2s',
   },
@@ -112,65 +110,91 @@ const ProgressBar = styled(LinearProgress)(({ theme }) => ({
   },
 }));
 
-// Add new styled components for skills
-const SkillContainer = styled(Box)(({ theme }) => ({
+const ActionButtons = styled(Box)(({ theme }) => ({
   display: 'flex',
-  flexWrap: 'wrap',
+  justifyContent: 'flex-end',
   gap: theme.spacing(2),
+  marginTop: theme.spacing(2),
   padding: theme.spacing(2),
-  borderRadius: theme.spacing(2),
-  backgroundColor: theme.palette.background.paper,
-  boxShadow: theme.shadows[1],
+  backgroundColor: theme.palette.grey[50],
+  borderRadius: theme.spacing(1),
 }));
 
-const SkillCard = styled(Paper)(({ theme }) => ({
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: theme.spacing(2),
-  width: 150,
-  height: 150,
-  borderRadius: theme.spacing(2),
-  transition: 'all 0.3s ease',
-  cursor: 'pointer',
+const SaveButton = styled(Button)(({ theme }) => ({
+  backgroundColor: theme.palette.success.main,
+  color: 'white',
   '&:hover': {
-    transform: 'scale(1.05)',
-    boxShadow: theme.shadows[4],
-    backgroundColor: theme.palette.primary.light,
-    color: theme.palette.primary.contrastText,
+    backgroundColor: theme.palette.success.dark,
   },
+  minWidth: 120,
 }));
 
-const SkillIcon = styled(Box)(({ theme }) => ({
-  fontSize: '3rem',
-  marginBottom: theme.spacing(1),
-  color: theme.palette.primary.main,
+const CancelButton = styled(Button)(({ theme }) => ({
+  borderColor: theme.palette.grey[400],
+  color: theme.palette.grey[700],
+  '&:hover': {
+    borderColor: theme.palette.grey[600],
+    backgroundColor: theme.palette.grey[100],
+  },
+  minWidth: 120,
 }));
 
-const SkillProgressContainer = styled(Box)(({ theme }) => ({
-  width: '100%',
-  display: 'flex',
-  alignItems: 'center',
-  gap: theme.spacing(2),
-}));
+const EditableField = ({ value, label, icon, isEditing, onChange }) => {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      {icon}
+      {isEditing ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 1 }}>
+          <TextField
+            label={label}
+            value={value}
+            onChange={onChange}
+            size="small"
+            sx={{
+              '& .MuiInputBase-input': {
+                color: 'white'
+              },
+              '& .MuiInputLabel-root': {
+                color: 'rgba(255, 255, 255, 0.7)'
+              },
+              '& .MuiOutlinedInput-root': {
+                '& fieldset': {
+                  borderColor: 'rgba(255, 255, 255, 0.7)'
+                },
+                '&:hover fieldset': {
+                  borderColor: 'white'
+                }
+              }
+            }}
+          />
+        </Box>
+      ) : (
+        <Box sx={{ display: 'flex', alignItems: 'center', ml: 1 }}>
+          <Typography sx={{ color: 'white' }}>{value}</Typography>
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 const ResumeProfile = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [isEditing, setIsEditing] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const [editingSection, setEditingSection] = useState(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [tempProfile, setTempProfile] = useState({});
   const [profile, setProfile] = useState({
     name: '',
-    title: '',
     email: '',
     phone: '',
     location: '',
     linkedin: '',
-    experience: '',
-    currentCTC: '',
-    expectedCTC: '',
-    noticePeriod: '',
-    summary: '',
+    job_title: '',
+    current_company: '',
+    total_experience: '',
+    resume_summary: '',
+    visa: '',
     skills: [],
     workExperience: [],
     education: [],
@@ -191,18 +215,15 @@ const ResumeProfile = () => {
       // Transform resume data to match profile structure
       const transformedProfile = {
         name: resumeData.name || 'N/A',
-        title: resumeData.job_title || 'N/A',
         email: resumeData.email || 'N/A',
         phone: resumeData.phone_number || 'N/A',
         location: resumeData.location || 'N/A',
         linkedin: resumeData.linkedin || 'N/A',
-        experience: Array.isArray(resumeData.experience) && resumeData.experience.length > 0 
-          ? `${resumeData.experience[0].duration || 'N/A'} Experience`
-          : 'N/A',
-        currentCTC: resumeData.current_job || 'N/A',
-        expectedCTC: resumeData.expected_salary || 'N/A',
-        noticePeriod: resumeData.notice_period || 'N/A',
-        summary: resumeData.resume_summary || 'No summary available',
+        job_title: resumeData.job_title || resumeData.current_role || 'N/A',
+        current_company: resumeData.current_company || resumeData.company || 'N/A',
+        total_experience: resumeData.total_experience || 'N/A',
+        resume_summary: resumeData.resume_summary || 'summary not available',
+        visa: resumeData.visa || 'N/A',
         skills: resumeData.skills 
           ? (typeof resumeData.skills === 'string' 
               ? resumeData.skills.split(',').map(skill => ({ name: skill.trim(), level: 70 }))
@@ -210,16 +231,27 @@ const ResumeProfile = () => {
                 ? resumeData.skills.map(skill => ({ name: skill, level: 70 }))
                 : [])
           : [],
-        workExperience: Array.isArray(resumeData.experience) 
-          ? resumeData.experience.map(exp => ({
-              role: exp.position || 'N/A',
-              company: exp.company || 'N/A',
+        workExperience: Array.isArray(resumeData.experience_details || resumeData.experience) 
+          ? (resumeData.experience_details || resumeData.experience).map(exp => ({
+              title: exp.title || exp.job_title || exp.role || 'N/A',
+              company: exp.company || exp.current_company || 'N/A',
               duration: exp.duration || 'N/A',
-              location: exp.location || 'N/A',
-              achievements: exp.description ? exp.description.split('\n').filter(line => line.trim()) : ['No specific achievements listed']
+              responsibilities: Array.isArray(exp.responsibilities) 
+                ? exp.responsibilities.join('\n')
+                : typeof exp.responsibilities === 'string'
+                  ? exp.responsibilities
+                  : exp.description || 'No specific responsibilities listed'
             }))
           : [],
-        education: Array.isArray(resumeData.education) ? resumeData.education : [],
+        education: typeof resumeData.education === 'string' 
+          ? [{ degree: resumeData.education }]
+          : Array.isArray(resumeData.education) 
+            ? resumeData.education.map(edu => ({
+                degree: edu.degree || 'N/A',
+                institution: edu.institution || 'N/A',
+                year: edu.year || 'N/A'
+              }))
+            : [],
         certifications: Array.isArray(resumeData.certifications) ? resumeData.certifications : [],
         languages: Array.isArray(resumeData.languages) ? resumeData.languages : []
       };
@@ -227,8 +259,11 @@ const ResumeProfile = () => {
     }
   }, [location.state]);
 
-  const handleEditToggle = () => {
-    setIsEditing(!isEditing);
+  const handleEditToggle = (section) => {
+    if (!isAuthenticated) {
+      return; // Prevent editing if not authenticated
+    }
+    setEditingSection(editingSection === section ? null : section);
   };
 
   const handleInputChange = (e, section = null, index = null) => {
@@ -254,19 +289,19 @@ const ResumeProfile = () => {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (section) => {
     try {
       // TODO: Implement API call to save profile changes
       setSnackbar({
         open: true,
-        message: 'Profile updated successfully',
+        message: `${section} updated successfully`,
         severity: 'success'
       });
-      setIsEditing(false);
+      setEditingSection(null);
     } catch (error) {
       setSnackbar({
         open: true,
-        message: 'Failed to update profile',
+        message: `Failed to update ${section}`,
         severity: 'error'
       });
     }
@@ -276,11 +311,10 @@ const ResumeProfile = () => {
     setProfile(prev => ({
       ...prev,
       workExperience: [...prev.workExperience, {
-        role: '',
+        title: '',
         company: '',
         duration: '',
-        location: '',
-        achievements: ['']
+        responsibilities: ['']
       }]
     }));
   };
@@ -321,100 +355,83 @@ const ResumeProfile = () => {
     }));
   };
 
+  const handleCancel = (section) => {
+    setEditingSection(null);
+  };
+
+  const handleProfileEdit = () => {
+    setIsEditingProfile(true);
+    setTempProfile({ ...profile });
+  };
+
+  const handleProfileSave = () => {
+    setProfile(tempProfile);
+    setIsEditingProfile(false);
+  };
+
+  const handleProfileCancel = () => {
+    setIsEditingProfile(false);
+  };
+
+  const handleProfileChange = (field, value) => {
+    setTempProfile(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   const renderSkills = () => {
     if (!profile.skills || profile.skills.length === 0) {
       return <Typography variant="body2" color="text.secondary">No skills available</Typography>;
     }
 
     return (
-      <SkillContainer 
-        sx={{ 
-          display: 'flex', 
-          flexWrap: 'wrap', 
-          gap: 1.5, 
-          alignItems: 'center',
-          backgroundColor: 'background.default',
-          padding: 2,
-          borderRadius: 2
-        }}
-      >
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
         {profile.skills.map((skill, index) => (
           <motion.div
             key={index}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.2, delay: index * 0.05 }}
-            style={{ display: 'inline-block' }}
           >
-            {isEditing ? (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            {editingSection === 'skills' ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                 <TextField
-                  fullWidth
                   label="Skill"
-                  name="name"
                   value={skill.name}
                   onChange={(e) => handleInputChange(e, 'skills', index)}
-                  variant="outlined"
                   size="small"
-                />
-                <TextField
-                  type="number"
-                  label="Proficiency"
-                  name="level"
-                  value={skill.level}
-                  onChange={(e) => handleInputChange(e, 'skills', index)}
-                  variant="outlined"
-                  size="small"
-                  InputProps={{ inputProps: { min: 0, max: 100 } }}
-                  sx={{ width: 120 }}
                 />
                 <IconButton 
                   color="error" 
-                  onClick={() => {
-                    const updatedSkills = profile.skills.filter((_, i) => i !== index);
-                    setProfile(prev => ({ ...prev, skills: updatedSkills }));
-                  }}
+                  onClick={() => handleRemoveItem('skills', index)}
                 >
                   <DeleteIcon />
                 </IconButton>
               </Box>
             ) : (
-              <Chip
+              <SkillChip
                 label={skill.name}
-                variant="outlined"
-                color="primary"
-                sx={{
-                  margin: 0.5,
-                  borderRadius: 1,
-                  fontWeight: 500,
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    backgroundColor: 'primary.main',
-                    color: 'white',
-                    transform: 'scale(1.05)',
-                  }
-                }}
+                onDelete={editingSection === 'skills' ? () => handleRemoveItem('skills', index) : undefined}
               />
             )}
           </motion.div>
         ))}
-        {isEditing && (
+        {editingSection === 'skills' && (
           <Button 
             startIcon={<AddIcon />} 
             variant="outlined"
-            color="primary"
             onClick={() => {
               setProfile(prev => ({
                 ...prev,
                 skills: [...prev.skills, { name: '', level: 50 }]
               }));
             }}
-            sx={{ alignSelf: 'center', mt: 2 }}
           >
             Add Skill
           </Button>
         )}
-      </SkillContainer>
+      </Box>
     );
   };
 
@@ -427,129 +444,74 @@ const ResumeProfile = () => {
       );
     }
 
-    return profile.workExperience.map((exp, index) => (
-      <ExperienceCard key={index}>
-        <CardContent>
-          {isEditing ? (
-            <Box sx={{ mb: 2 }}>
-              <TextField
-                fullWidth
-                label="Role"
-                name="role"
-                value={exp.role}
-                onChange={(e) => handleInputChange(e, 'workExperience', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="Company"
-                name="company"
-                value={exp.company}
-                onChange={(e) => handleInputChange(e, 'workExperience', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="Duration"
-                name="duration"
-                value={exp.duration}
-                onChange={(e) => handleInputChange(e, 'workExperience', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="Location"
-                name="location"
-                value={exp.location}
-                onChange={(e) => handleInputChange(e, 'workExperience', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="Achievements (one per line)"
-                name="achievements"
-                value={exp.achievements.join('\n')}
-                onChange={(e) => {
-                  const achievements = e.target.value.split('\n').filter(line => line.trim());
-                  handleInputChange({
-                    target: {
-                      name: 'achievements',
-                      value: achievements
-                    }
-                  }, 'workExperience', index);
-                }}
-                variant="outlined"
-                multiline
-                rows={3}
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <Button
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={() => handleRemoveItem('workExperience', index)}
-                size="small"
-              >
-                Remove Experience
-              </Button>
-            </Box>
-          ) : (
-            <>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    {exp.role}
-                  </Typography>
-                  <Typography variant="subtitle1" color="primary" gutterBottom>
-                    {exp.company}
-                  </Typography>
+    return (
+      <Grid container spacing={2}>
+        {profile.workExprience.map((exp, index) => (
+          <Grid item xs={12} key={index}>
+            <Paper elevation={1} sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold' }}>
+                  {exp.title || exp.job_title}
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <BusinessIcon sx={{ fontSize: '0.9rem', color: 'text.secondary' }} />
+                    <Typography variant="subtitle1" color="text.secondary">
+                      {exp.company || exp.current_company}
+                    </Typography>
+                  </Box>
+                  {exp.duration && (
+                    <Typography 
+                      variant="body2" 
+                      sx={{ 
+                        bgcolor: 'primary.main',
+                        color: 'white',
+                        px: 2,
+                        py: 0.5,
+                        borderRadius: 1,
+                        display: 'inline-block'
+                      }}
+                    >
+                      {exp.duration}
+                    </Typography>
+                  )}
                 </Box>
-                <Chip 
-                  label={exp.duration} 
-                  size="small" 
-                  color="primary" 
-                  variant="outlined" 
-                  sx={{ fontWeight: 500 }} 
-                />
+                {exp.location && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LocationIcon sx={{ fontSize: '0.9rem', color: 'text.secondary' }} />
+                    <Typography variant="body2" color="text.secondary">
+                      {exp.location}
+                    </Typography>
+                  </Box>
+                )}
+                {exp.responsibilities && exp.responsibilities.length > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1 }}>
+                      Responsibilities & Achievements
+                    </Typography>
+                    {exp.responsibilities.split('\n').map((achievement, i) => (
+                      <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5 }}>
+                        <FiberManualRecordIcon sx={{ fontSize: '0.5rem', mt: 1, color: 'primary.main' }} />
+                        <Typography variant="body2">
+                          {achievement}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
               </Box>
-              <Typography variant="body2" color="text.secondary" gutterBottom sx={{ mb: 1 }}>
-                <LocationIcon sx={{ fontSize: 'inherit', verticalAlign: 'middle', mr: 0.5 }} />
-                {exp.location}
-              </Typography>
-              <Box sx={{ mt: 2 }}>
-                {exp.achievements.map((achievement, i) => (
-                  <Typography 
-                    key={i} 
-                    variant="body2" 
-                    sx={{ 
-                      mb: 1, 
-                      display: 'flex', 
-                      alignItems: 'flex-start',
-                      '&::before': {
-                        content: '"•"',
-                        mr: 1,
-                        color: 'primary.main',
-                        fontWeight: 'bold'
-                      }
-                    }}
-                  >
-                    {achievement}
-                  </Typography>
-                ))}
-              </Box>
-            </>
-          )}
-        </CardContent>
-      </ExperienceCard>
-    ));
+            </Paper>
+          </Grid>
+        ))}
+        {(!profile.workExperience || profile.workExperience.length === 0) && (
+          <Grid item xs={12}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+              No work experience available
+            </Typography>
+          </Grid>
+        )}
+      </Grid>
+    );
   };
 
   const renderEducation = () => {
@@ -561,76 +523,38 @@ const ResumeProfile = () => {
       );
     }
 
-    return profile.education.map((edu, index) => (
-      <Card key={index} sx={{ mb: 2 }}>
-        <CardContent>
-          {isEditing ? (
-            <Box>
-              <TextField
-                fullWidth
-                label="Degree"
-                name="degree"
-                value={edu.degree}
-                onChange={(e) => handleInputChange(e, 'education', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="Institution"
-                name="institution"
-                value={edu.institution}
-                onChange={(e) => handleInputChange(e, 'education', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="Year"
-                name="year"
-                value={edu.year}
-                onChange={(e) => handleInputChange(e, 'education', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <TextField
-                fullWidth
-                label="GPA"
-                name="gpa"
-                value={edu.gpa}
-                onChange={(e) => handleInputChange(e, 'education', index)}
-                variant="outlined"
-                size="small"
-                sx={{ mb: 1 }}
-              />
-              <Button
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={() => handleRemoveItem('education', index)}
-                size="small"
-              >
-                Remove Education
-              </Button>
-            </Box>
-          ) : (
-            <>
-              <Typography variant="h6" gutterBottom>
-                {edu.degree}
-              </Typography>
-              <Typography variant="subtitle1" color="primary">
-                {edu.institution}
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                {edu.year} | GPA: {edu.gpa}
-              </Typography>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    ));
+    return (
+      <Grid container spacing={2}>
+        {profile.education.map((edu, index) => (
+          <Grid item xs={12} key={index}>
+            <Paper elevation={1} sx={{ p: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Typography variant="h6" color="primary">
+                  {edu.degree}
+                </Typography>
+                {edu.institution && (
+                  <Typography variant="subtitle1" color="text.secondary">
+                    {edu.institution}
+                  </Typography>
+                )}
+                {edu.year && (
+                  <Typography variant="body2" color="text.secondary">
+                    {edu.year}
+                  </Typography>
+                )}
+              </Box>
+            </Paper>
+          </Grid>
+        ))}
+        {(!profile.education || profile.education.length === 0) && (
+          <Grid item xs={12}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+              No education details available
+            </Typography>
+          </Grid>
+        )}
+      </Grid>
+    );
   };
 
   const renderLanguages = () => {
@@ -644,44 +568,33 @@ const ResumeProfile = () => {
 
     return profile.languages.map((lang, index) => (
       <Box key={index} sx={{ mb: 2 }}>
-        {isEditing ? (
-          <Box>
+        {editingSection === 'languages' ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <TextField
-              fullWidth
               label="Language"
-              name="name"
               value={lang.name}
               onChange={(e) => handleInputChange(e, 'languages', index)}
-              variant="outlined"
               size="small"
-              sx={{ mb: 1 }}
             />
             <TextField
-              fullWidth
               label="Proficiency"
-              name="proficiency"
               value={lang.proficiency}
               onChange={(e) => handleInputChange(e, 'languages', index)}
-              variant="outlined"
               size="small"
-              sx={{ mb: 1 }}
             />
-            <Button
+            <IconButton
               color="error"
-              startIcon={<DeleteIcon />}
               onClick={() => handleRemoveItem('languages', index)}
-              size="small"
             >
-              Remove Language
-            </Button>
+              <DeleteIcon />
+            </IconButton>
           </Box>
         ) : (
-          <>
-            <Typography variant="subtitle1">{lang.name}</Typography>
-            <Typography variant="body2" color="textSecondary">
-              {lang.proficiency}
-            </Typography>
-          </>
+          <Chip
+            label={`${lang.name} - ${lang.proficiency}`}
+            color="primary"
+            variant="outlined"
+          />
         )}
       </Box>
     ));
@@ -696,47 +609,53 @@ const ResumeProfile = () => {
       );
     }
 
-    return (
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-        {profile.certifications.map((cert, index) => (
-          isEditing ? (
-            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <TextField
-                label="Certification"
-                value={cert}
-                onChange={(e) => {
-                  const newCerts = [...profile.certifications];
-                  newCerts[index] = e.target.value;
-                  setProfile(prev => ({ ...prev, certifications: newCerts }));
-                }}
-                variant="outlined"
-                size="small"
-                sx={{ width: 200 }}
-              />
-              <IconButton
-                color="error"
-                onClick={() => handleRemoveItem('certifications', index)}
-                size="small"
-              >
-                <DeleteIcon />
-              </IconButton>
-            </Box>
-          ) : (
-            <Chip
-              key={index}
-              label={cert}
-              color="primary"
-              variant="outlined"
-              sx={{ m: 0.5 }}
+    return profile.certifications.map((cert, index) => (
+      <Box key={index} sx={{ mb: 1 }}>
+        {editingSection === 'certifications' ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TextField
+              fullWidth
+              label="Certification"
+              value={cert}
+              onChange={(e) => {
+                const newCerts = [...profile.certifications];
+                newCerts[index] = e.target.value;
+                setProfile(prev => ({ ...prev, certifications: newCerts }));
+              }}
+              size="small"
             />
-          )
-        ))}
+            <IconButton
+              color="error"
+              onClick={() => handleRemoveItem('certifications', index)}
+            >
+              <DeleteIcon />
+            </IconButton>
+          </Box>
+        ) : (
+          <Chip
+            label={cert}
+            color="primary"
+            variant="outlined"
+          />
+        )}
       </Box>
+    ));
+  };
+
+  const renderEditButton = (section) => {
+    if (!isAuthenticated) return null;
+    return (
+      <IconButton 
+        onClick={() => handleEditToggle(section)}
+        color={editingSection === section ? 'primary' : 'default'}
+      >
+        <EditIcon />
+      </IconButton>
     );
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <ProfileContainer maxWidth="lg">
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
@@ -755,296 +674,303 @@ const ResumeProfile = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <ProfileHeader elevation={3} sx={{ position: 'relative' }}>
-          {!isEditing && (
-            <IconButton 
-              onClick={handleEditToggle}
-              sx={{ 
-                position: 'absolute', 
-                top: 16, 
-                right: 16, 
-                color: 'white' 
-              }}
-            >
-              <EditIcon />
-            </IconButton>
-          )}
+        <ProfileHeader elevation={3}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={3} sx={{ textAlign: 'center' }}>
               <StyledAvatar>{profile.name.charAt(0)}</StyledAvatar>
-              {isEditing ? (
-                <Button
-                  variant="outlined"
-                  component="label"
-                  startIcon={<AttachFileIcon />}
-                  sx={{ color: 'white', borderColor: 'white' }}
-                >
-                  Upload Resume
-                  <input type="file" hidden />
-                </Button>
-              ) : (
-                <Button
-                  variant="outlined"
-                  startIcon={<AttachFileIcon />}
-                  sx={{ color: 'white', borderColor: 'white' }}
-                >
-                  Resume.pdf
-                </Button>
-              )}
+              <Button
+                variant="outlined"
+                component="label"
+                startIcon={<AttachFileIcon />}
+                sx={{ color: 'white', borderColor: 'white' }}
+              >
+                Upload Resume
+                <input type="file" hidden />
+              </Button>
             </Grid>
             <Grid item xs={12} md={9}>
-              {isEditing ? (
-                <>
-                  <TextField
-                    fullWidth
-                    label="Name"
-                    name="name"
-                    value={profile.name}
-                    onChange={handleInputChange}
-                    variant="outlined"
-                    sx={{ mb: 2 }}
-                  />
-                  <TextField
-                    fullWidth
-                    label="Job Title"
-                    name="title"
-                    value={profile.title}
-                    onChange={handleInputChange}
-                    variant="outlined"
-                    sx={{ mb: 2 }}
-                  />
-                </>
-              ) : (
-                <>
-                  <Typography variant="h4" gutterBottom>
-                    {profile.name}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Typography variant="h3" sx={{ color: 'white', fontWeight: 'bold' }}>
+                    {isEditingProfile ? tempProfile.name : profile.name}
                   </Typography>
-                  <Typography variant="h6" gutterBottom>
-                    {profile.title}
-                  </Typography>
-                </>
-              )}
+                  {isAuthenticated && (
+                    <IconButton 
+                      onClick={() => handleEditToggle('name')}
+                      sx={{ color: 'white' }}
+                    >
+                    </IconButton>
+                  )}
+                </Box>
+              </Box>
+              <Box sx={{ mb: 2 }}>
+                <EditableField
+                  value={isEditingProfile ? tempProfile.job_title : profile.job_title}
+                  label="Job Title"
+                  icon={<WorkIcon sx={{ color: 'white' }} />}
+                  isEditing={isEditingProfile}
+                  onChange={(e) => handleProfileChange('job_title', e.target.value)}
+                />
+              </Box>
               <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <LocationIcon sx={{ mr: 1 }} />
-                  {profile.location}
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <WorkIcon sx={{ mr: 1 }} />
-                  {profile.experience} Experience
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <LinkedInIcon sx={{ mr: 1 }} />
-                  {profile.linkedin}
-                </Box>
+                <EditableField
+                  value={isEditingProfile ? tempProfile.location : profile.location}
+                  label="Location"
+                  icon={<LocationIcon sx={{ color: 'white' }} />}
+                  isEditing={isEditingProfile}
+                  onChange={(e) => handleProfileChange('location', e.target.value)}
+                />
+                <EditableField
+                  value={isEditingProfile ? tempProfile.total_experience : profile.total_experience}
+                  label="Experience"
+                  icon={<WorkIcon sx={{ color: 'white' }} />}
+                  isEditing={isEditingProfile}
+                  onChange={(e) => handleProfileChange('total_experience', e.target.value)}
+                />
+                <EditableField
+                  value={isEditingProfile ? tempProfile.linkedin : profile.linkedin}
+                  label="LinkedIn"
+                  icon={<LinkedInIcon sx={{ color: 'white' }} />}
+                  isEditing={isEditingProfile}
+                  onChange={(e) => handleProfileChange('linkedin', e.target.value)}
+                />
               </Stack>
               <Stack direction="row" spacing={3}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <EmailIcon sx={{ mr: 1 }} />
-                  {profile.email}
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PhoneIcon sx={{ mr: 1 }} />
-                  {profile.phone}
-                </Box>
+                <EditableField
+                  value={isEditingProfile ? tempProfile.email : profile.email}
+                  label="Email"
+                  icon={<EmailIcon sx={{ color: 'white' }} />}
+                  isEditing={isEditingProfile}
+                  onChange={(e) => handleProfileChange('email', e.target.value)}
+                />
+                <EditableField
+                  value={isEditingProfile ? tempProfile.phone : profile.phone}
+                  label="Phone"
+                  icon={<PhoneIcon sx={{ color: 'white' }} />}
+                  isEditing={isEditingProfile}
+                  onChange={(e) => handleProfileChange('phone', e.target.value)}
+                />
               </Stack>
             </Grid>
           </Grid>
+          {isAuthenticated && (
+            <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
+              {isEditingProfile ? (
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <IconButton onClick={handleProfileSave} sx={{ color: 'white' }}>
+                    <SaveIcon />
+                  </IconButton>
+                  <IconButton onClick={handleProfileCancel} sx={{ color: 'white' }}>
+                    <CancelIcon />
+                  </IconButton>
+                </Box>
+              ) : (
+                <IconButton onClick={handleProfileEdit} sx={{ color: 'white' }}>
+                  <EditIcon />
+                </IconButton>
+              )}
+            </Box>
+          )}
         </ProfileHeader>
 
-        {isEditing ? (
-          <Box sx={{ mt: 3, textAlign: 'right' }}>
-            <Button 
-              variant="contained" 
-              color="primary" 
-              onClick={handleSave}
-              startIcon={<SaveIcon />}
-            >
-              Save Profile
-            </Button>
-            <Button 
-              variant="outlined" 
-              color="secondary" 
-              onClick={handleEditToggle}
-              sx={{ ml: 2 }}
-            >
-              Cancel
-            </Button>
-          </Box>
-        ) : null}
-
         <ProfileSection>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-            <DescriptionIcon sx={{ mr: 1 }} />
-            Professional Summary
-          </Typography>
-          {isEditing ? (
-            <TextField
-              fullWidth
-              multiline
-              rows={4}
-              label="Summary"
-              name="summary"
-              value={profile.summary}
-              onChange={handleInputChange}
-              variant="outlined"
-            />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+              <DescriptionIcon sx={{ mr: 1 }} />
+              Professional Summary
+            </Typography>
+            {renderEditButton('summary')}
+          </Box>
+          {editingSection === 'summary' ? (
+            <>
+              <TextField
+                fullWidth
+                multiline
+                rows={4}
+                label="Summary"
+                value={profile.resume_summary}
+                onChange={handleInputChange}
+              />
+              <ActionButtons>
+                <CancelButton
+                  variant="outlined"
+                  onClick={() => handleCancel('summary')}
+                >
+                  Cancel
+                </CancelButton>
+                <SaveButton
+                  variant="contained"
+                  onClick={() => handleSave('summary')}
+                  startIcon={<SaveIcon />}
+                >
+                  Save Changes
+                </SaveButton>
+              </ActionButtons>
+            </>
           ) : (
             <Typography variant="body1" paragraph>
-              {profile.summary}
+              {profile.resume_summary}
             </Typography>
           )}
-          <Grid container spacing={2} sx={{ mt: 2 }}>
-            <Grid item xs={12} sm={4}>
-              <Typography variant="subtitle2" color="textSecondary">
-                Current CTC
-              </Typography>
-              {isEditing ? (
-                <TextField
-                  fullWidth
-                  label="Current CTC"
-                  name="currentCTC"
-                  value={profile.currentCTC}
-                  onChange={handleInputChange}
-                  variant="outlined"
-                  size="small"
-                />
-              ) : (
-                <Typography variant="body1">{profile.currentCTC}</Typography>
-              )}
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <Typography variant="subtitle2" color="textSecondary">
-                Expected CTC
-              </Typography>
-              {isEditing ? (
-                <TextField
-                  fullWidth
-                  label="Expected CTC"
-                  name="expectedCTC"
-                  value={profile.expectedCTC}
-                  onChange={handleInputChange}
-                  variant="outlined"
-                  size="small"
-                />
-              ) : (
-                <Typography variant="body1">{profile.expectedCTC}</Typography>
-              )}
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <Typography variant="subtitle2" color="textSecondary">
-                Notice Period
-              </Typography>
-              {isEditing ? (
-                <TextField
-                  fullWidth
-                  label="Notice Period"
-                  name="noticePeriod"
-                  value={profile.noticePeriod}
-                  onChange={handleInputChange}
-                  variant="outlined"
-                  size="small"
-                />
-              ) : (
-                <Typography variant="body1">{profile.noticePeriod}</Typography>
-              )}
-            </Grid>
-          </Grid>
         </ProfileSection>
 
         <ProfileSection>
-          <Typography variant="h6" gutterBottom>
-            Key Skills
-            {isEditing && (
-              <Button 
-                startIcon={<AddIcon />} 
-                size="small"
-                sx={{ ml: 2 }}
-              >
-                Add Skill
-              </Button>
-            )}
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Key Skills
+            </Typography>
+            <Box>
+              {renderEditButton('skills')}
+            </Box>
+          </Box>
           {renderSkills()}
         </ProfileSection>
 
         <ProfileSection>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-            <WorkIcon sx={{ mr: 1 }} />
-            Work Experience
-            {isEditing && (
-              <Button 
-                startIcon={<AddIcon />} 
-                size="small"
-                onClick={handleAddExperience}
-                sx={{ ml: 2 }}
-              >
-                Add Experience
-              </Button>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+              <WorkIcon sx={{ mr: 1 }} />
+              Work Experience
+            </Typography>
+          </Box>
+          <Grid container spacing={2}>
+            {profile.workExperience.map((exp, index) => (
+              <Grid item xs={12} key={index}>
+                <Paper elevation={1} sx={{ p: 2, mb: 2 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold' }}>
+                      {exp.title || exp.job_title}
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <BusinessIcon sx={{ fontSize: '0.9rem', color: 'text.secondary' }} />
+                        <Typography variant="subtitle1" color="text.secondary">
+                          {exp.company}
+                        </Typography>
+                      </Box>
+                      {exp.duration && (
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            bgcolor: 'primary.main',
+                            color: 'white',
+                            px: 2,
+                            py: 0.5,
+                            borderRadius: 1,
+                            display: 'inline-block'
+                          }}
+                        >
+                          {exp.duration}
+                        </Typography>
+                      )}
+                    </Box>
+                    {exp.location && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LocationIcon sx={{ fontSize: '0.9rem', color: 'text.secondary' }} />
+                        <Typography variant="body2" color="text.secondary">
+                          {exp.location}
+                        </Typography>
+                      </Box>
+                    )}
+                    {exp.responsibilities && exp.responsibilities.length > 0 && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="subtitle2" color="text.primary" sx={{ mb: 1 }}>
+                          Responsibilities & Achievements
+                        </Typography>
+                        {exp.responsibilities.split('\n').map((achievement, i) => (
+                          <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5 }}>
+                            <FiberManualRecordIcon sx={{ fontSize: '0.5rem', mt: 1, color: 'primary.main' }} />
+                            <Typography variant="body2">
+                              {achievement}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+            ))}
+            {(!profile.workExperience || profile.workExperience.length === 0) && (
+              <Grid item xs={12}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  No work experience available
+                </Typography>
+              </Grid>
             )}
-          </Typography>
-          {renderWorkExperience()}
+          </Grid>
         </ProfileSection>
 
         <ProfileSection>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-            <SchoolIcon sx={{ mr: 1 }} />
-            Education
-            {isEditing && (
-              <Button 
-                startIcon={<AddIcon />} 
-                size="small"
-                onClick={handleAddEducation}
-                sx={{ ml: 2 }}
-              >
-                Add Education
-              </Button>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+              <SchoolIcon sx={{ mr: 1 }} />
+              Education
+            </Typography>
+          </Box>
+          <Grid container spacing={2}>
+            {profile.education.map((edu, index) => (
+              <Grid item xs={12} key={index}>
+                <Paper elevation={1} sx={{ p: 2, mb: 2 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Typography variant="h6" color="primary">
+                      {edu.degree}
+                    </Typography>
+                    {edu.institution && (
+                      <Typography variant="subtitle1" color="text.secondary">
+                        {edu.institution}
+                      </Typography>
+                    )}
+                    {edu.year && (
+                      <Typography variant="body2" color="text.secondary">
+                        {edu.year}
+                      </Typography>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+            ))}
+            {(!profile.education || profile.education.length === 0) && (
+              <Grid item xs={12}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  No education details available
+                </Typography>
+              </Grid>
             )}
-          </Typography>
-          {renderEducation()}
+          </Grid>
         </ProfileSection>
 
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
             <ProfileSection>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                Certifications
-                {isEditing && (
-                  <Button 
-                    startIcon={<AddIcon />} 
-                    size="small"
-                    onClick={handleAddCertification}
-                    sx={{ ml: 2 }}
-                  >
-                    Add Certification
-                  </Button>
-                )}
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">
+                  Certifications
+                </Typography>
+                <Box>
+                  {renderEditButton('certifications')}
+                </Box>
+              </Box>
               {renderCertifications()}
             </ProfileSection>
           </Grid>
           <Grid item xs={12} md={6}>
             <ProfileSection>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                <LanguageIcon sx={{ mr: 1 }} />
-                Languages
-                {isEditing && (
-                  <Button 
-                    startIcon={<AddIcon />} 
-                    size="small"
-                    onClick={handleAddLanguage}
-                    sx={{ ml: 2 }}
-                  >
-                    Add Language
-                  </Button>
-                )}
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+                  <LanguageIcon sx={{ mr: 1 }} />
+                  Languages
+                </Typography>
+                <Box>
+                  {renderEditButton('languages')}
+                </Box>
+              </Box>
               {renderLanguages()}
             </ProfileSection>
           </Grid>
         </Grid>
       </motion.div>
-    </Container>
+    </ProfileContainer>
   );
 };
 

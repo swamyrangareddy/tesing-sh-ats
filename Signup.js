@@ -88,25 +88,22 @@ const BackgroundGradient = styled(Box)({
 });
 
 const validatePassword = (password) => {
-  const errors = [];
-  
   if (password.length < 6) {
-    errors.push("Password must be at least 6 characters long");
+    return "Password must be at least 6 characters";
   }
   if (!/[A-Z]/.test(password)) {
-    errors.push("Password must contain at least one uppercase letter");
+    return "Add an uppercase letter";
   }
   if (!/[a-z]/.test(password)) {
-    errors.push("Password must contain at least one lowercase letter");
+    return "Add a lowercase letter";
   }
   if (!/\d/.test(password)) {
-    errors.push("Password must contain at least one number");
+    return "Add a number";
   }
   if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    errors.push("Password must contain at least one special character");
+    return "Add a special character (!@#$%^&*(),.?\":{}|<>)";
   }
-  
-  return errors;
+  return "";
 };
 
 const Signup = () => {
@@ -116,7 +113,7 @@ const Signup = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [passwordErrors, setPasswordErrors] = useState([]);
+  const [passwordError, setPasswordError] = useState('');
   const navigate = useNavigate();
   const { signup } = useAuth();
   const theme = useTheme();
@@ -124,7 +121,7 @@ const Signup = () => {
   const handlePasswordChange = (e) => {
     const newPassword = e.target.value;
     setPassword(newPassword);
-    setPasswordErrors(validatePassword(newPassword));
+    setPasswordError(validatePassword(newPassword));
   };
 
   const handleSubmit = async (e) => {
@@ -133,9 +130,9 @@ const Signup = () => {
     setSuccessMessage('');
 
     // Validate password
-    const errors = validatePassword(password);
-    if (errors.length > 0) {
-      setPasswordErrors(errors);
+    const passwordValidationError = validatePassword(password);
+    if (passwordValidationError) {
+      setPasswordError(passwordValidationError);
       return;
     }
 
@@ -146,13 +143,13 @@ const Signup = () => {
 
     try {
       await signup({ username, email, password });
-      setSuccessMessage('Account created successfully! Redirecting to login...');
+      setSuccessMessage('Account created! Redirecting to login...');
       setTimeout(() => {
         navigate('/login');
       }, 2000);
     } catch (error) {
       console.error('Signup error:', error);
-      setError(error.response?.data?.error || error.message || 'Failed to sign up');
+      setError(error.response?.data?.error || 'Failed to sign up');
     }
   };
 
@@ -240,8 +237,8 @@ const Signup = () => {
               autoComplete="new-password"
               value={password}
               onChange={handlePasswordChange}
-              error={passwordErrors.length > 0}
-              helperText={passwordErrors.length > 0 ? passwordErrors.join(', ') : ''}
+              error={!!passwordError}
+              helperText={passwordError}
             />
             <StyledTextField
               margin="normal"
@@ -253,6 +250,8 @@ const Signup = () => {
               id="confirmPassword"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              error={password !== confirmPassword && confirmPassword !== ''}
+              helperText={password !== confirmPassword && confirmPassword !== '' ? 'Passwords do not match' : ''}
             />
 
             <StyledButton

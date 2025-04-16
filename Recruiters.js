@@ -22,6 +22,10 @@ import {
   Typography,
   Grid,
   Chip,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -37,6 +41,8 @@ import {
 import { styled, useTheme } from '@mui/material/styles';
 import NoData from '../components/NoData';
 import { getRecruiters, createRecruiter, updateRecruiter, deleteRecruiter } from '../services/api';
+import ReactCountryFlag from 'react-country-flag';
+import useDebounce from '../hooks/useDebounce';
 
 const SearchBox = styled(Box)(({ theme }) => ({
   display: 'flex',
@@ -122,6 +128,30 @@ const DetailChip = styled(Chip)(({ theme }) => ({
   fontWeight: 500,
 }));
 
+// Add country codes data
+const countryCodes = [
+  { code: '+1', country: 'US', name: 'United States' },
+  { code: '+44', country: 'GB', name: 'United Kingdom' },
+  { code: '+91', country: 'IN', name: 'India' },
+  { code: '+86', country: 'CN', name: 'China' },
+  { code: '+81', country: 'JP', name: 'Japan' },
+  { code: '+49', country: 'DE', name: 'Germany' },
+  { code: '+33', country: 'FR', name: 'France' },
+  { code: '+61', country: 'AU', name: 'Australia' },
+  { code: '+55', country: 'BR', name: 'Brazil' },
+  { code: '+7', country: 'RU', name: 'Russia' },
+  { code: '+82', country: 'KR', name: 'South Korea' },
+  { code: '+65', country: 'SG', name: 'Singapore' },
+  { code: '+971', country: 'AE', name: 'United Arab Emirates' },
+  { code: '+966', country: 'SA', name: 'Saudi Arabia' },
+  { code: '+20', country: 'EG', name: 'Egypt' },
+  { code: '+27', country: 'ZA', name: 'South Africa' },
+  { code: '+52', country: 'MX', name: 'Mexico' },
+  { code: '+34', country: 'ES', name: 'Spain' },
+  { code: '+39', country: 'IT', name: 'Italy' },
+  { code: '+31', country: 'NL', name: 'Netherlands' },
+];
+
 const Recruiters = () => {
   const theme = useTheme();
   const [recruiters, setRecruiters] = useState([]);
@@ -129,6 +159,7 @@ const Recruiters = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms delay
   const [openDialog, setOpenDialog] = useState(false);
   const [openDetailDialog, setOpenDetailDialog] = useState(false);
   const [selectedRecruiter, setSelectedRecruiter] = useState(null);
@@ -139,8 +170,30 @@ const Recruiters = () => {
     company: '',
     country_code: '+1',
   });
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+
+  const fetchRecruiters = async () => {
+    try {
+      setLoading(true);
+      const response = await getRecruiters();
+      const recruitersData = response.data || response || [];
+      const recruitersArray = Array.isArray(recruitersData) ? recruitersData : [];
+      const sortedRecruiters = recruitersArray.sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
+      setRecruiters(sortedRecruiters);
+      setFilteredRecruiters(sortedRecruiters);
+    } catch (error) {
+      console.error('Error fetching recruiters:', error);
+      setError('Failed to load recruiters');
+      setRecruiters([]);
+      setFilteredRecruiters([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchRecruiters();
@@ -149,25 +202,14 @@ const Recruiters = () => {
   useEffect(() => {
     const filtered = recruiters.filter(
       (recruiter) =>
-        recruiter.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        recruiter.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (recruiter.company && recruiter.company.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (recruiter.phone && recruiter.phone.toLowerCase().includes(searchTerm.toLowerCase()))
+        recruiter.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        recruiter.email.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        (recruiter.company && recruiter.company.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+        (recruiter.phone && recruiter.phone.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
     );
     setFilteredRecruiters(filtered);
     setPage(0); // Reset to first page when filtering
-  }, [searchTerm, recruiters]);
-
-  const fetchRecruiters = async () => {
-    try {
-      const data = await getRecruiters();
-      setRecruiters(Array.isArray(data) ? data : []);
-      setFilteredRecruiters(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching recruiters:', error);
-      setError('Failed to load recruiters');
-    }
-  };
+  }, [debouncedSearchTerm, recruiters]);
 
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
@@ -392,46 +434,56 @@ const Recruiters = () => {
           <Table>
             <TableHead>
               <TableRow>
+                <TableCell>Created At</TableCell>
                 <TableCell>Name</TableCell>
                 <TableCell>Email</TableCell>
                 <TableCell>Phone</TableCell>
                 <TableCell>Company</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {currentRecruiters.map((recruiter) => (
-                <StyledTableRow key={recruiter.id}>
-                  <TableCell sx={{ fontWeight: 500, color: '#333' }}>{recruiter.name}</TableCell>
-                  <TableCell>{recruiter.email}</TableCell>
-                  <TableCell>
-                    {recruiter.country_code && recruiter.phone 
-                      ? `${recruiter.country_code} ${recruiter.phone}`
-                      : recruiter.phone || '-'}
-                  </TableCell>
-                  <TableCell>{recruiter.company || '-'}</TableCell>
-                  <TableCell align="right">
-                    <ActionButton
-                      onClick={() => handleOpenDetailDialog(recruiter)}
-                      sx={{ color: theme.palette.info.main }}
-                    >
-                      <ViewIcon />
-                    </ActionButton>
-                    <ActionButton
-                      onClick={() => handleOpenDialog(recruiter)}
-                      sx={{ color: theme.palette.primary.main }}
-                    >
-                      <EditIcon />
-                    </ActionButton>
-                    <ActionButton
-                      onClick={() => handleDelete(recruiter.id)}
-                      sx={{ color: theme.palette.error.main }}
-                    >
-                      <DeleteIcon />
-                    </ActionButton>
-                  </TableCell>
-                </StyledTableRow>
-              ))}
+              {filteredRecruiters
+                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                .map((recruiter) => (
+                  <StyledTableRow key={recruiter.id}>
+                    <TableCell>
+                      {new Date(recruiter.created_at).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </TableCell>
+                    <TableCell>{recruiter.name}</TableCell>
+                    <TableCell>{recruiter.email}</TableCell>
+                    <TableCell>
+                      {recruiter.country_code && recruiter.phone 
+                        ? `${recruiter.country_code} ${recruiter.phone}`
+                        : recruiter.phone || '-'}
+                    </TableCell>
+                    <TableCell>{recruiter.company || '-'}</TableCell>
+                    <TableCell align="right">
+                      <ActionButton
+                        onClick={() => handleOpenDetailDialog(recruiter)}
+                        sx={{ color: theme.palette.info.main }}
+                      >
+                        <ViewIcon />
+                      </ActionButton>
+                      <ActionButton
+                        onClick={() => handleOpenDialog(recruiter)}
+                        sx={{ color: theme.palette.primary.main }}
+                      >
+                        <EditIcon />
+                      </ActionButton>
+                      <ActionButton
+                        onClick={() => handleDelete(recruiter.id)}
+                        sx={{ color: theme.palette.error.main }}
+                      >
+                        <DeleteIcon />
+                      </ActionButton>
+                    </TableCell>
+                  </StyledTableRow>
+                ))}
             </TableBody>
           </Table>
           <TablePagination
@@ -489,19 +541,30 @@ const Recruiters = () => {
               required
             />
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField
-                label="Country Code"
-                name="country_code"
-                value={formData.country_code}
-                onChange={handleInputChange}
-                margin="normal"
-                sx={{ width: '30%' }}
-                inputProps={{
-                  pattern: '\\+\\d{1,4}',
-                  title: 'Country code format: +XX'
-                }}
-                helperText="Format: +XX (e.g., +1, +44, +91)"
-              />
+              <FormControl sx={{ width: '30%', mt: 2 }}>
+                <InputLabel>Country Code</InputLabel>
+                <Select
+                  value={formData.country_code}
+                  onChange={(e) => setFormData({ ...formData, country_code: e.target.value })}
+                  label="Country Code"
+                >
+                  {countryCodes.map((country) => (
+                    <MenuItem key={country.code} value={country.code}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <ReactCountryFlag
+                          countryCode={country.country}
+                          svg
+                          style={{
+                            width: '1.5em',
+                            height: '1.5em',
+                          }}
+                        />
+                        <Typography>{country.code}</Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
               <TextField
                 fullWidth
                 label="Phone"

@@ -37,7 +37,7 @@ import animationData3 from '../assets/animations/Animation - 1743158522363.json'
 
 const HeroSection = styled(Box)(({ theme }) => ({
   background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 90%)',
-  minHeight: '90vh',
+  minHeight: '100vh',
   display: 'flex',
   alignItems: 'center',
   position: 'relative',

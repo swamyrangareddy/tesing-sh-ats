@@ -1,12 +1,14 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnimatePresence, LazyMotion, domAnimation } from 'framer-motion';
+import { Box } from '@mui/material';
+import { ResumeCountProvider } from './contexts/ResumeCountContext';
 
 // Pages
-import Home from './pages/Home';
+import Home from './pages/Home.js';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/Jobs';
 import Recruiters from './pages/Recruiters';
@@ -146,24 +148,148 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            borderRadius: 4,
+            borderRadius: 8,
+            backgroundColor: '#ffffff',
+            transition: 'all 0.2s ease-in-out',
             '& fieldset': {
-              borderColor: '#cccccc',
+              borderColor: '#e0e0e0',
+              borderWidth: '1.5px',
+              transition: 'border-color 0.2s ease-in-out',
             },
             '&:hover fieldset': {
-              borderColor: '#999999',
+              borderColor: '#007bff',
             },
             '&.Mui-focused fieldset': {
               borderColor: '#007bff',
+              borderWidth: '2px',
             },
-            '& input': {
+            '& input, & textarea': {
               color: '#333333',
+              fontSize: '1rem',
+              '&::placeholder': {
+                color: '#999999',
+                opacity: 1,
+              },
+            },
+            '&.Mui-disabled': {
+              backgroundColor: '#f5f5f5',
+              '& fieldset': {
+                borderColor: '#e0e0e0',
+              },
             },
           },
           '& .MuiInputLabel-root': {
             color: '#666666',
+            fontSize: '1rem',
             '&.Mui-focused': {
               color: '#007bff',
+              fontWeight: 500,
+            },
+          },
+          '& .MuiInputBase-multiline': {
+            padding: '14px',
+          },
+        },
+      },
+    },
+    MuiSelect: {
+      styleOverrides: {
+        select: {
+          borderRadius: 8,
+          backgroundColor: '#ffffff',
+          padding: '12px 14px',
+          '&:focus': {
+            backgroundColor: '#ffffff',
+          },
+          '& .MuiSelect-select': {
+            padding: '8px 12px',
+          },
+        },
+        outlined: {
+          padding: '12px 14px',
+          '&:hover': {
+            backgroundColor: '#ffffff',
+          },
+        },
+        icon: {
+          color: '#666666',
+          right: '12px',
+          transition: 'transform 0.2s ease-in-out',
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#e0e0e0',
+            borderWidth: '1.5px',
+            transition: 'border-color 0.2s ease-in-out',
+          },
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#007bff',
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#007bff',
+            borderWidth: '2px',
+          },
+          '& .MuiSelect-select': {
+            padding: '12px 14px !important',
+            backgroundColor: '#ffffff',
+          },
+        },
+        input: {
+          padding: '12px 14px',
+          height: 'auto',
+          lineHeight: '1.4',
+          fontSize: '1rem',
+          color: '#333333',
+        },
+      },
+    },
+    MuiInputLabel: {
+      styleOverrides: {
+        outlined: {
+          transform: 'translate(14px, 14px) scale(1)',
+          '&.MuiInputLabel-shrink': {
+            transform: 'translate(14px, -9px) scale(0.75)',
+            backgroundColor: '#ffffff',
+            padding: '0 4px',
+          },
+        },
+      },
+    },
+    MuiFormControl: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 8,
+            backgroundColor: '#ffffff',
+            transition: 'all 0.2s ease-in-out',
+            '& fieldset': {
+              borderColor: '#e0e0e0',
+              borderWidth: '1.5px',
+              transition: 'border-color 0.2s ease-in-out',
+            },
+            '&:hover fieldset': {
+              borderColor: '#007bff',
+            },
+            '&.Mui-focused fieldset': {
+              borderColor: '#007bff',
+              borderWidth: '2px',
+            },
+          },
+          '& .MuiInputLabel-root': {
+            color: '#666666',
+            fontSize: '1rem',
+            '&.Mui-focused': {
+              color: '#007bff',
+              fontWeight: 500,
+            },
+          },
+          '& .MuiSelect-select': {
+            '&:focus': {
+              backgroundColor: 'transparent',
             },
           },
         },
@@ -196,8 +322,7 @@ const theme = createTheme({
           color: '#333333',
         },
         head: {
-          backgroundColor: '#f4f7f9',
-          color: '#333333',
+          backgroundColor: '#f5f5f5',
           fontWeight: 600,
         },
       },
@@ -246,8 +371,124 @@ const theme = createTheme({
         },
       },
     },
+    MuiRadioGroup: {
+      styleOverrides: {
+        root: {
+          '& .MuiFormControlLabel-root': {
+            marginRight: '24px',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'rgba(0, 123, 255, 0.04)',
+              borderRadius: '4px',
+            },
+          },
+        },
+      },
+    },
+    MuiFormControlLabel: {
+      styleOverrides: {
+        root: {
+          margin: 0,
+          padding: '8px 16px',
+          borderRadius: '4px',
+          transition: 'all 0.2s ease-in-out',
+          '&.Mui-checked': {
+            backgroundColor: 'rgba(0, 0, 0, 0.08)',
+            '& .MuiFormControlLabel-label': {
+              color: '#000000',
+              fontWeight: 500,
+            },
+            '& .MuiRadio-root': {
+              color: '#000000',
+            },
+          },
+          '& .MuiFormControlLabel-label': {
+            color: '#666666',
+            transition: 'color 0.2s ease-in-out',
+          },
+          '& .MuiRadio-root': {
+            color: '#cccccc',
+            transition: 'all 0.2s ease-in-out',
+            '&:hover': {
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+            },
+            '&.Mui-checked': {
+              color: '#000000',
+              '& .MuiSvgIcon-root': {
+                transform: 'scale(1.1)',
+              },
+            },
+          },
+          '&:hover': {
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+        },
+      },
+    },
+    MuiRadio: {
+      styleOverrides: {
+        root: {
+          padding: '8px',
+          transition: 'all 0.2s ease-in-out',
+          '&.Mui-checked': {
+            color: '#000000',
+            '& .MuiSvgIcon-root': {
+              transform: 'scale(1.1)',
+            },
+            '&:hover': {
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+            },
+          },
+          '&:hover': {
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+        },
+      },
+    },
   },
 });
+
+// Public Layout Component with Auth Check
+const PublicLayout = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // If user is authenticated and trying to access public routes, redirect to dashboard
+    if (isAuthenticated && ['/login', '/signup', '/'].includes(location.pathname)) {
+      navigate('/dashboard');
+    }
+  }, [isAuthenticated, navigate, location]);
+
+  return (
+    <Box
+      component="main"
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        zIndex: 1,
+      }}
+    >
+      {children}
+    </Box>
+  );
+};
+
+// App Layout Component
+const AppLayout = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+  return (
+    <>
+      {isAuthenticated && <Navbar />}
+      <AnimatePresence mode="wait">
+        {children}
+      </AnimatePresence>
+    </>
+  );
+};
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -261,111 +502,7 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// App Layout Component
-const AppLayout = ({ children }) => {
-  const { isAuthenticated } = useAuth();
-  const location = useLocation();
-  const isPublicJobPage = location.pathname.startsWith('/jobs/share/');
-
-  return (
-    <>
-      {isAuthenticated && !isPublicJobPage && <Navbar />}
-      <AnimatePresence mode="wait">
-        {children}
-      </AnimatePresence>
-    </>
-  );
-};
-
-// Routes Component
-const AppRoutes = () => {
-  const location = useLocation();
-
-  return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/jobs"
-          element={
-            <ProtectedRoute>
-              <Jobs />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/recruiters"
-          element={
-            <ProtectedRoute>
-              <Recruiters />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/submissions"
-          element={
-            <ProtectedRoute>
-              <Submissions />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/resume-upload"
-          element={
-            <ProtectedRoute>
-              <ResumeUpload />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/ats-score"
-          element={
-            <ProtectedRoute>
-              <ATSScore />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/resume-search"
-          element={
-            <ProtectedRoute>
-              <Search />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route
-          path="/resume-profile/"
-          element={
-            <ProtectedRoute>
-              <ResumeProfile />
-            </ProtectedRoute>
-          }
-        />
-        
-        <Route path="/jobs/share/:shareableLink" element={<PublicJobApplication />} />
-      </Routes>
-    </AnimatePresence>
-  );
-};
-
+// Main App Component
 function App() {
   return (
     <LazyMotion features={domAnimation}>
@@ -373,9 +510,99 @@ function App() {
         <CssBaseline />
         <BrowserRouter>
           <AuthProvider>
-            <AppLayout>
-              <AppRoutes />
-            </AppLayout>
+            <ResumeCountProvider>
+              <Routes>
+                {/* Public Job Application Route - Must be first */}
+                <Route 
+                  path="/share/:shareableLink" 
+                  element={
+                    <PublicLayout>
+                      <PublicJobApplication />
+                    </PublicLayout>
+                  } 
+                />
+
+                {/* Public Routes */}
+                <Route path="/login" element={
+                  <PublicLayout>
+                    <Login />
+                  </PublicLayout>
+                } />
+                <Route path="/signup" element={
+                  <PublicLayout>
+                    <Signup />
+                  </PublicLayout>
+                } />
+                <Route path="/" element={
+                  <PublicLayout>
+                    <Home />
+                  </PublicLayout>
+                } />
+
+                {/* Protected Routes */}
+                <Route path="/dashboard" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <Dashboard />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/jobs" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <Jobs />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/recruiters" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <Recruiters />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/submissions" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <Submissions />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/resume-upload" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <ResumeUpload />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/ats-score" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <ATSScore />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/search" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <Search />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/resume-profile" element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <ResumeProfile />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } />
+
+                {/* Catch-all route - Redirect to dashboard if authenticated, otherwise to home */}
+                <Route path="*" element={
+                  <Navigate to="/dashboard" replace />
+                } />
+              </Routes>
+            </ResumeCountProvider>
           </AuthProvider>
         </BrowserRouter>
       </ThemeProvider>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Button,
@@ -28,8 +28,7 @@ import {
   Grid,
   ToggleButton,
   Backdrop,
-  Fade,
-  Card,
+  TablePagination,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
@@ -43,13 +42,17 @@ import {
   Business as BusinessIcon,
   CalendarToday as CalendarIcon,
   Description as DescriptionIcon,
-
-  Check as CheckIcon
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { styled, useTheme, alpha } from '@mui/material/styles';
-import { getResumes, uploadResume, downloadResume, deleteResume } from '../services/api';
+import { getResumes, uploadResume, downloadResume, deleteResume, getResumesCount } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import Lottie from 'lottie-react';
+import extractionAnimation from '../assets/animations/Animation - 1743215778009.json';
+import { useResumeCount } from '../contexts/ResumeCountContext';
+import useDebounce from '../hooks/useDebounce';
+import { motion } from 'framer-motion';
 
 const VisuallyHiddenInput = styled('input')`
   clip: rect(0 0 0 0);
@@ -82,13 +85,6 @@ const TopSection = styled(Box)(({ theme }) => ({
   width: '100%'
 }));
 
-const ToggleSection = styled(Box)(({ theme }) => ({
-  display: 'flex',
-  justifyContent: 'center',
-  width: '100%',
-  paddingTop: theme.spacing(1),
-  borderTop: '1px solid rgba(0, 0, 0, 0.1)',
-}));
 
 const StyledTextField = styled(TextField)(({ theme }) => ({
   '& .MuiOutlinedInput-root': {
@@ -363,18 +359,152 @@ const StatCard = styled(Box)(({ theme }) => ({
   }
 }));
 
+// Create a memoized UploadProgressDialog component to prevent unnecessary re-renders
+const UploadProgressDialog = React.memo(({ 
+  open, 
+  onClose, 
+  uploadStats, 
+  showAnimation, 
+  isError 
+}) => {
+  const isProcessing = uploadStats.processingStage === 'Processing...';
+  const isComplete = uploadStats.processingStage === 'Complete';
+  
+  // Calculate progress percentage
+  const progressPercentage = uploadStats.total > 0 
+    ? Math.round((uploadStats.completed / uploadStats.total) * 100) 
+    : 0;
+  
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          p: 2
+        }
+      }}
+    >
+      <DialogTitle sx={{ pb: 1 }}>
+        <Typography variant="h6" component="div">
+          {isComplete ? 'Processing Complete' : isError ? 'Processing Error' : 'Processing Resumes'}
+        </Typography>
+      </DialogTitle>
+      <DialogContent>
+        <Box sx={{ width: '100%', mt: 1 }}>
+          {showAnimation && (
+            <Box sx={{ width: '100%', height: 200, display: 'flex', justifyContent: 'center', alignItems: 'center', mb: 2 }}>
+              <Lottie
+                animationData={extractionAnimation}
+                loop={!isComplete && !isError}
+                style={{ width: 200, height: 200 }}
+              />
+            </Box>
+          )}
+          <Box sx={{ mb: 2 }}>
+            <LinearProgress 
+              variant="determinate"
+              value={progressPercentage}
+              sx={{
+                height: 8,
+                borderRadius: 4,
+                '& .MuiLinearProgress-bar': {
+                  transition: 'transform 0.3s linear'
+                }
+              }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'right' }}>
+              {progressPercentage}%
+            </Typography>
+          </Box>
+          {uploadStats.currentFile && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              {isComplete ? 'All files processed' : isError ? 'Error occurred during processing' : `Processing: ${uploadStats.currentFile}`}
+            </Typography>
+          )}
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <Typography variant="subtitle2" color="text.primary">
+                Total Files:
+              </Typography>
+              <Typography variant="h6" color="primary.main">
+                {uploadStats.total}
+              </Typography>
+            </Grid>
+            <Grid item xs={6}>
+              <Typography variant="subtitle2" color="text.primary">
+                Processed:
+              </Typography>
+              <Typography variant="h6" color="primary.main">
+                {uploadStats.completed} / {uploadStats.total}
+              </Typography>
+            </Grid>
+            <Grid item xs={6}>
+              <Typography variant="subtitle2" color={uploadStats.successful > 0 ? "success.main" : "text.primary"}>
+                Successful:
+              </Typography>
+              <Typography variant="h6" color="success.main">
+                {uploadStats.successful}
+              </Typography>
+            </Grid>
+            <Grid item xs={6}>
+              <Typography variant="subtitle2" color={uploadStats.failed > 0 ? "error.main" : "text.primary"}>
+                Failed:
+              </Typography>
+              <Typography variant="h6" color="error.main">
+                {uploadStats.failed}
+              </Typography>
+            </Grid>
+            {uploadStats.retrying > 0 && !isComplete && !isError && (
+              <Grid item xs={12}>
+                <Typography variant="body2" color="warning.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  Retrying extraction...
+                  <CircularProgress size={16} thickness={6} color="warning" />
+                </Typography>
+              </Grid>
+            )}
+            {isComplete && (
+              <Grid item xs={12}>
+                <Typography variant="body2" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  All files processed successfully!
+                </Typography>
+              </Grid>
+            )}
+            {isError && (
+              <Grid item xs={12}>
+                <Typography variant="body2" color="error.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  An error occurred during processing. Please try again.
+                </Typography>
+              </Grid>
+            )}
+          </Grid>
+        </Box>
+      </DialogContent>
+    </Dialog>
+  );
+});
+
+// Add a display name for the component
+UploadProgressDialog.displayName = 'UploadProgressDialog';
+
 const ResumeUpload = () => {
   const navigate = useNavigate();
-  const { token, logout } = useAuth();
-  const theme = useTheme();
+  const { token, logout, isAuthenticated } = useAuth();
+  const { totalResumes, updateResumeCount } = useResumeCount();
   const [resumes, setResumes] = useState([]);
   const [filteredResumes, setFilteredResumes] = useState([]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms delay
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedResume, setSelectedResume] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [searchQuery, setSearchQuery] = useState('');
   const [previewUrl, setPreviewUrl] = useState(null);
   const [downloadingResume, setDownloadingResume] = useState(null);
   const [openDownloadDialog, setOpenDownloadDialog] = useState(false);
@@ -390,32 +520,41 @@ const ResumeUpload = () => {
     currentFile: '',
     processingStage: ''
   });
+  const [showAnimation, setShowAnimation] = useState(false);
   const [showUploadProgress, setShowUploadProgress] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadingFiles, setUploadingFiles] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [failedResumes, setFailedResumes] = useState([]);
+  const [retryingResumes, setRetryingResumes] = useState(false);
+  const [resumeCountAnimation, setResumeCountAnimation] = useState({
+    prevCount: 0,
+    newCount: 0,
+    isAnimating: false
+  });
 
   useEffect(() => {
     if (!token) {
       navigate('/login');
       return;
     }
-    fetchAllResumes();
+    // Use skipLoadingState=true to prevent loading state changes on initial load
+    fetchAllResumes(0, true);
+    fetchTotalResumes();
   }, [token, navigate]);
 
   useEffect(() => {
     filterResumes();
-  }, [searchQuery, sessionUploads, allResumes]);
+  }, [debouncedSearchTerm, resumes]);
 
   const filterResumes = () => {
     const sourceData = allResumes;
     
-    if (!searchQuery.trim()) {
+    if (!searchTerm.trim()) {
       setFilteredResumes(sourceData);
       return;
     }
 
-    const query = searchQuery.toLowerCase();
+    const query = searchTerm.toLowerCase();
     const filtered = sourceData.filter(resume => {
       return (
         (resume.name && resume.name.toLowerCase().includes(query)) ||
@@ -428,188 +567,271 @@ const ResumeUpload = () => {
     setFilteredResumes(filtered);
   };
 
-  const fetchAllResumes = async (retryCount = 0) => {
-    try {
+  const fetchAllResumes = async (retryCount = 0, skipLoadingState = false) => {
+    // Only set loading state if not skipping it
+    if (!skipLoadingState) {
       setLoading(true);
-      setIsRefreshing(true);
-      const data = await getResumes();
+    }
+    
+    try {
+      // Use a direct API call to avoid any state changes that could cause re-renders
+      const response = await getResumes();
       
-      if (!data || !data.resumes) {
-        throw new Error('Invalid response format');
+      // Check if response exists and has the expected format
+      if (response && response.data && response.data.resumes) {
+        // Update state with the resumes data
+        setAllResumes(response.data.resumes);
+        setFilteredResumes(response.data.resumes);
+        setError(null);
+      } else {
+        // console.error('Invalid response format:', response);
+        setAllResumes([]);
+        setFilteredResumes([]);
+        setError('Invalid response format');
       }
-      
-      setAllResumes(data.resumes);
-      setFilteredResumes(data.resumes);
-      setError(null);
     } catch (err) {
-      console.error('Error fetching resumes:', err);
+      // console.error('Error fetching resumes:', err);
       
+      // Handle session expiration
       if (err.message === 'Session expired. Please login again.') {
         logout();
         navigate('/login');
         return;
       }
-
-      // Retry logic for network errors
-      if (retryCount < 3 && (err.message.includes('network') || err.message === 'Invalid response format')) {
-        setTimeout(() => {
-          fetchAllResumes(retryCount + 1);
-        }, 1000 * (retryCount + 1)); // Exponential backoff
+      
+      // Retry on network errors
+      if (retryCount < 3 && (err.message.includes('Network Error') || err.message.includes('Failed to fetch'))) {
+        // console.log(`Retrying fetch (${retryCount + 1}/3)...`);
+        setTimeout(() => fetchAllResumes(retryCount + 1, skipLoadingState), 1000 * (retryCount + 1));
         return;
       }
-
+      
       setError(err.message);
       showSnackbar(err.message, 'error');
     } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      // Only set loading to false if we're not skipping loading state
+      if (!skipLoadingState) {
+        setLoading(false);
+      }
     }
+  };
+
+  const fetchTotalResumes = async () => {
+    try {
+      const response = await getResumesCount();
+      if (response && response.data) {
+        // Update the total resumes count in the context
+        updateTotalResumesWithAnimation(response.data.count);
+      }
+    } catch (err) {
+      // console.error('Error fetching total resumes:', err);
+      showSnackbar('Failed to update resume count', 'error');
+    }
+  };
+
+  const updateTotalResumesWithAnimation = (newCount) => {
+    setResumeCountAnimation(prev => ({
+      prevCount: totalResumes,
+      newCount: newCount,
+      isAnimating: true
+    }));
+    
+    // Update the actual count
+    updateResumeCount(newCount - totalResumes);
+    
+    // Reset animation after delay
+    setTimeout(() => {
+      setResumeCountAnimation(prev => ({
+        ...prev,
+        isAnimating: false
+      }));
+    }, 1000);
   };
 
   const handleFileUpload = async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    if (files.length > 50) {
-      showSnackbar('Maximum 50 resumes can be uploaded at once. Please reduce the number of files.', 'error');
-      event.target.value = '';
-      return;
-    }
-
-    const validTypes = ['.pdf', '.doc', '.docx'];
-    const invalidFiles = [];
-
-    // Validate all files first
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      if (!validTypes.includes(fileExt)) {
-        invalidFiles.push(file.name);
-      }
-    }
-
-    if (invalidFiles.length > 0) {
-      showSnackbar(`Invalid file format(s): ${invalidFiles.join(', ')}. Please upload PDF or DOCX files only.`, 'error');
-      return;
-    }
+    // Set initial states in a batch to minimize re-renders
+    setShowUploadProgress(true);
+    setShowAnimation(true);
+    setUploadingFiles(true);
+    setUploadStats({
+      total: files.length,
+      completed: 0,
+      successful: 0,
+      failed: 0,
+      retrying: 0,
+      updated: 0,
+      currentFile: '',
+      processingStage: 'Starting...'
+    });
 
     try {
-      setLoading(true);
-      setShowUploadProgress(true);
-      setUploadingFiles(Array.from(files).map(f => f.name));
-      
-      // Initialize upload stats
-      setUploadStats({
-        total: files.length,
-        successful: 0,
-        failed: 0,
-        retrying: 0,
-        completed: 0,
-        updated: 0,
-        currentFile: '',
-        processingStage: 'Preparing files...'
-      });
-
-      // Process files in batches of 5 for better performance
-      const batchSize = 5;
+      // Process files in smaller batches for better progress tracking
+      const batchSize = 2;
       const batches = [];
       for (let i = 0; i < files.length; i += batchSize) {
         batches.push(Array.from(files).slice(i, i + batchSize));
       }
 
-      let processedCount = 0;
-      const results = [];
+      const allResults = [];
+      let totalProcessed = 0;
+      let statsUpdateTimeout;
+      let errorCount = 0;
+      const tempFailedResumes = [];
 
-      for (const batch of batches) {
-        const formData = new FormData();
-        batch.forEach(file => {
-          formData.append('file', file);
-        });
-
-        setUploadStats(prev => ({
-          ...prev,
-          processingStage: 'Processing...'
-        }));
-
-        const response = await uploadResume(formData);
-        processedCount += batch.length;
-        results.push(...response.data.results);
-
-        // Update stats after each batch
-        const successful = results.filter(r => r.status === 'success');
-        const failed = results.filter(r => r.status === 'error');
-        const updated = successful.filter(r => r.message.includes('updated'));
-        const retrying = response.data.retry_count || 0;
-
-        setUploadStats(prev => ({
-          ...prev,
-          successful: successful.length,
-          failed: failed.length,
-          completed: response.data.processed_files || processedCount,
-          retrying: retrying,
-          updated: updated.length,
-          processingStage: 'Processing...'
-        }));
-
-        // Fetch updated resumes after each batch
-        await fetchAllResumes();
-      }
-
-      // Show final stats
-      const finalStats = {
-        successful: results.filter(r => r.status === 'success').length,
-        failed: results.filter(r => r.status === 'error').length,
-        updated: results.filter(r => r.message?.includes('updated')).length,
-        uploaded: results.filter(r => r.message?.includes('uploaded')).length,
-        maxRetries: results.filter(r => r.retries >= 3).length
+      // Function to update stats with debouncing
+      const updateStats = (newStats) => {
+        if (statsUpdateTimeout) {
+          clearTimeout(statsUpdateTimeout);
+        }
+        statsUpdateTimeout = setTimeout(() => {
+          setUploadStats(prev => ({
+            ...prev,
+            ...newStats
+          }));
+        }, 100);
       };
 
-      // Show detailed summary in snackbar
+      // Process all batches without updating the UI between batches
+      for (const batch of batches) {
+        const batchPromises = batch.map(async (file) => {
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          updateStats({
+            currentFile: file.name,
+            processingStage: 'Processing...'
+          });
+
+          try {
+            const response = await uploadResume(formData);
+            
+            if (response.data && response.data.results) {
+              for (const result of response.data.results) {
+                allResults.push(result);
+                
+                if (result.status === 'error') {
+                  errorCount++;
+                  tempFailedResumes.push({
+                    id: Date.now() + Math.random(), // Generate unique ID
+                    filename: file.name,
+                    error_type: result.error || 'Unknown error',
+                    error_message: result.message || 'Unknown error',
+                    file: file // Store the file for retry
+                  });
+                  // console.error(`Error processing file ${file.name}:`, result.message || 'Unknown error');
+                }
+              }
+              
+              totalProcessed++;
+              
+              const successful = allResults.filter(r => r.status === 'success').length;
+              const failed = allResults.filter(r => r.status === 'error').length;
+              const updated = allResults.filter(r => r.message && r.message.includes('updated')).length;
+              const retrying = allResults.filter(r => r.retries && r.retries > 0).length;
+
+              updateStats({
+                successful,
+                failed,
+                completed: totalProcessed,
+                retrying,
+                updated,
+                processingStage: totalProcessed === files.length ? 'Finalizing...' : 'Processing...'
+              });
+            }
+            return { status: 'success', file };
+          } catch (err) {
+            // console.error(`Error processing file ${file.name}:`, err);
+            errorCount++;
+            totalProcessed++;
+            tempFailedResumes.push({
+              id: Date.now() + Math.random(),
+              filename: file.name,
+              error_type: 'processing_failed',
+              error_message: err.message,
+              file: file
+            });
+            
+            updateStats({
+              failed: allResults.filter(r => r.status === 'error').length + 1,
+              completed: totalProcessed,
+              processingStage: totalProcessed === files.length ? 'Finalizing...' : 'Processing...'
+            });
+            return { status: 'error', file, error: err };
+          }
+        });
+
+        await Promise.all(batchPromises);
+      }
+
+      // Update failed resumes list
+      setFailedResumes(tempFailedResumes);
+
+      // Clear any pending stats updates
+      if (statsUpdateTimeout) {
+        clearTimeout(statsUpdateTimeout);
+      }
+
+      // Calculate final stats accurately
+      const finalStats = {
+        successful: allResults.filter(r => r.status === 'success').length,
+        failed: allResults.filter(r => r.status === 'error').length,
+        updated: allResults.filter(r => r.message && r.message.includes('updated')).length,
+        uploaded: allResults.filter(r => r.message && r.message.includes('uploaded')).length,
+        maxRetries: allResults.filter(r => r.retries && r.retries >= 3).length
+      };
+      
+      // Update total resumes count with animation
+      if (finalStats.uploaded > 0) {
+        updateTotalResumesWithAnimation(totalResumes + finalStats.uploaded);
+      }
+      
+      setUploadStats(prev => ({
+        ...prev,
+        successful: finalStats.successful,
+        failed: finalStats.failed,
+        completed: files.length,
+        updated: finalStats.updated,
+        currentFile: '',
+        processingStage: errorCount > 0 ? 'Error occurred' : 'Complete'
+      }));
+      
       const message = `Processed ${files.length} resumes:
         • ${finalStats.uploaded} new uploads
         • ${finalStats.updated} updates
         • ${finalStats.failed} failed
         • ${finalStats.maxRetries} max retries reached`;
       
-      // Show appropriate severity based on results
       let severity = 'success';
       if (finalStats.failed > 0 || finalStats.maxRetries > 0) {
         severity = (finalStats.failed + finalStats.maxRetries) === files.length ? 'error' : 'warning';
       }
       
       showSnackbar(message, severity);
-      
-      // Add successful uploads to session uploads
-      const successful = results.filter(r => r.status === 'success');
-      if (successful.length > 0) {
-        setSessionUploads(prev => [...prev, ...successful]);
-      }
 
-      // Final fetch to ensure data is up to date
-      await fetchAllResumes();
-
-      // Hide progress dialog after a short delay
       setTimeout(() => {
         setShowUploadProgress(false);
-        setUploadStats(prev => ({
-          ...prev,
-          currentFile: '',
-          processingStage: ''
-        }));
-      }, 1000);
-
-    } catch (err) {
-      console.error('Upload error:', err);
-      showSnackbar('An error occurred while uploading resumes', 'error');
-      setShowUploadProgress(false);
+        setShowAnimation(false);
+        fetchAllResumes();
+      }, 1500);
+    } catch (error) {
+      // console.error('Error during file upload:', error);
+      showSnackbar('Error uploading files. Please try again.', 'error');
+      
       setUploadStats(prev => ({
         ...prev,
-        currentFile: '',
-        processingStage: ''
+        processingStage: 'Error occurred'
       }));
+      
+      setTimeout(() => {
+        setShowUploadProgress(false);
+        setShowAnimation(false);
+      }, 1500);
     } finally {
-      setLoading(false);
       event.target.value = '';
+      setUploadingFiles(false);
     }
   };
 
@@ -686,7 +908,7 @@ const ResumeUpload = () => {
       setOpenDownloadDialog(false);
       showSnackbar('Resume downloaded successfully', 'success');
     } catch (error) {
-      console.error('Download error:', error);
+      // console.error('Download error:', error);
       showSnackbar(error.message || 'Failed to download resume', 'error');
     } finally {
       setDownloadingResume(null);
@@ -700,12 +922,15 @@ const ResumeUpload = () => {
     try {
       await deleteResume(resume._id);
       showSnackbar('Resume deleted successfully', 'success');
+      // Update the total resumes count with animation
+      updateTotalResumesWithAnimation(totalResumes - 1);
       await fetchAllResumes();
       if (selectedResume?._id === resume._id) {
         setOpenDialog(false);
       }
     } catch (err) {
-      showSnackbar(err.message, 'error');
+      // console.error('Error deleting resume:', err);
+      showSnackbar(err.message || 'Failed to delete resume', 'error');
     }
   };
 
@@ -833,8 +1058,9 @@ const ResumeUpload = () => {
             </Grid>
           </Paper>
         ))}
-
-        {resume.experience && Array.isArray(resume.experience) && resume.experience.length > 0 && (
+        {(resume.experience || resume.experience_details) && 
+         Array.isArray(resume.experience || resume.experience_details) && 
+         (resume.experience || resume.experience_details).length > 0 && (
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <WorkIcon color="primary" />
@@ -843,14 +1069,14 @@ const ResumeUpload = () => {
               </Typography>
             </Box>
             <Stack spacing={2}>
-              {resume.experience.map((exp, i) => (
+              {(resume.experience || resume.experience_details).map((exp, i) => (
                 <ExperienceCard key={i} variant="outlined">
                   <Grid container spacing={2}>
                     <Grid item xs={12}>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                         <BusinessIcon color="primary" sx={{ mr: 1 }} />
                         <Typography variant="h6">
-                          {exp.position || 'Position'}
+                          {exp.title || exp.job_title || 'Position'}
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -862,7 +1088,7 @@ const ResumeUpload = () => {
                       <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
                         <DescriptionIcon sx={{ fontSize: '0.9rem', mr: 1, mt: 0.3, color: 'text.secondary' }} />
                         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                          {exp.description || 'No description available'}
+                          {exp.responsibilities || exp.description || 'No description available'}
                         </Typography>
                       </Box>
                     </Grid>
@@ -876,79 +1102,38 @@ const ResumeUpload = () => {
     );
   };
 
-  const UploadProgressDialog = () => {
-    const isProcessing = uploadStats.processingStage === 'Processing...';
-    
-    return (
-      <Dialog
-        open={showUploadProgress}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            p: 2
+  const handleRetryFailedResume = async (failedResume) => {
+    try {
+      setRetryingResumes(true);
+      const formData = new FormData();
+      formData.append('file', failedResume.file);
+      
+      const response = await uploadResume(formData);
+      
+      if (response.data && response.data.results) {
+        const result = response.data.results[0];
+        if (result.status === 'success') {
+          // Remove the failed resume from the list
+          setFailedResumes(prev => prev.filter(r => r.id !== failedResume.id));
+          showSnackbar('Resume processed successfully', 'success');
+          
+          // Update the total resumes count in the context
+          // Check if this is a new upload or an update
+          if (result.message && result.message.includes('uploaded')) {
+            updateTotalResumesWithAnimation(totalResumes + 1);
           }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Typography variant="h6" component="div">
-            Processing Resumes
-          </Typography>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ width: '100%', mt: 1 }}>
-            <Box sx={{ mb: 2 }}>
-              <LinearProgress 
-                variant="indeterminate"
-                sx={{
-                  height: 8,
-                  borderRadius: 4,
-                  '& .MuiLinearProgress-bar': {
-                    transition: 'transform 0.3s linear'
-                  }
-                }}
-              />
-            </Box>
-            {!isProcessing && (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                {uploadStats.currentFile && `Uploading: ${uploadStats.currentFile}`}
-              </Typography>
-            )}
-            <Grid container spacing={2}>
-              <Grid item xs={6}>
-                <Typography variant="body2" color="text.secondary">
-                  Total Files: {uploadStats.total}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2" color="text.secondary">
-                  Processed: {uploadStats.completed}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2" color={uploadStats.successful > 0 ? "success.main" : "text.secondary"}>
-                  Successful: {uploadStats.successful}
-                </Typography>
-              </Grid>
-              <Grid item xs={6}>
-                <Typography variant="body2" color={uploadStats.failed > 0 ? "error.main" : "text.secondary"}>
-                  Failed: {uploadStats.failed}
-                </Typography>
-              </Grid>
-              {uploadStats.retrying > 0 && (
-                <Grid item xs={12}>
-                  <Typography variant="body2" color="warning.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    Retrying extraction...
-                    <CircularProgress size={16} thickness={6} color="warning" />
-                  </Typography>
-                </Grid>
-              )}
-            </Grid>
-          </Box>
-        </DialogContent>
-      </Dialog>
-    );
+          
+          await fetchAllResumes();
+        } else {
+          showSnackbar('Failed to process resume. Please try again.', 'error');
+        }
+      }
+    } catch (err) {
+      // console.error('Error retrying failed resume:', err);
+      showSnackbar(err.message, 'error');
+    } finally {
+      setRetryingResumes(false);
+    }
   };
 
   return (
@@ -959,37 +1144,66 @@ const ResumeUpload = () => {
             label="Search resumes..."
             variant="outlined"
             size="small"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             InputProps={{
               startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />,
             }}
           />
-          <Button
-            component="label"
-            variant="contained"
-            startIcon={<UploadIcon />}
-            disabled={loading}
-            sx={{
-              borderRadius: 2,
-              px: 3,
-              py: 1,
-              textTransform: 'none',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
-              },
-            }}
-          >
-            Upload Resume
-            <VisuallyHiddenInput 
-              type="file" 
-              onChange={handleFileUpload} 
-              accept=".pdf,.doc,.docx" 
-              multiple 
-            />
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography 
+              variant="body1" 
+              color="text.secondary" 
+              sx={{ 
+                backgroundColor: resumeCountAnimation.isAnimating ? 'success.main' : 'primary.main',
+                color: 'white',
+                padding: '8px 16px',
+                borderRadius: 2,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                transition: 'all 0.3s ease',
+                transform: resumeCountAnimation.isAnimating ? 'scale(1.1)' : 'scale(1)'
+              }}
+            >
+              Total Resumes: {resumeCountAnimation.isAnimating ? 
+                <motion.span
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  {resumeCountAnimation.newCount}
+                </motion.span> 
+                : totalResumes
+              }
+            </Typography>
+            <Button
+              component="label"
+              variant="contained"
+              startIcon={<UploadIcon />}
+              disabled={loading}
+              sx={{
+                borderRadius: 2,
+                px: 3,
+                py: 1,
+                textTransform: 'none',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 6px 16px rgba(0, 0, 0, 0.15)',
+                },
+              }}
+            >
+              Upload Resume
+              <VisuallyHiddenInput 
+                type="file" 
+                onChange={handleFileUpload} 
+                accept=".pdf,.doc,.docx" 
+                multiple 
+              />
+            </Button>
+          </Box>
         </TopSection>
       </SearchBox>
       
@@ -1128,16 +1342,16 @@ const ResumeUpload = () => {
                         mb: 1
                       }} />
                       <Typography variant="h6" color="text.secondary">
-                        {searchQuery 
+                        {searchTerm 
                           ? 'No matching resumes found' 
                           : 'No resumes in the database'}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {searchQuery 
+                        {searchTerm 
                           ? 'Try adjusting your search terms' 
                           : 'Upload some resumes to populate the database'}
                       </Typography>
-                      {!searchQuery && (
+                      {!searchTerm && (
                         <Button
                           component="label"
                           variant="contained"
@@ -1161,6 +1375,58 @@ const ResumeUpload = () => {
           </Table>
         )}
       </StyledTableContainer>
+
+      {failedResumes.length > 0 && (
+        <Box sx={{ mt: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" color="error">
+              Failed Resumes ({failedResumes.length})
+            </Typography>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={() => {
+                failedResumes.forEach(resume => handleRetryFailedResume(resume));
+              }}
+              disabled={retryingResumes}
+              startIcon={retryingResumes ? <CircularProgress size={20} /> : <RefreshIcon />}
+            >
+              Retry All Failed
+            </Button>
+          </Box>
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Filename</TableCell>
+                  <TableCell>Error Type</TableCell>
+                  <TableCell>Error Message</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {failedResumes.map((resume) => (
+                  <TableRow key={resume.id}>
+                    <TableCell>{resume.filename}</TableCell>
+                    <TableCell>{resume.error_type}</TableCell>
+                    <TableCell>{resume.error_message}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleRetryFailedResume(resume)}
+                        disabled={retryingResumes}
+                      >
+                        Retry
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
 
       <Dialog
         open={openDialog}
@@ -1262,7 +1528,13 @@ const ResumeUpload = () => {
         </DialogActions>
       </Dialog>
 
-      <UploadProgressDialog />
+      <UploadProgressDialog 
+        open={showUploadProgress}
+        onClose={() => setShowUploadProgress(false)}
+        uploadStats={uploadStats}
+        showAnimation={showAnimation}
+        isError={uploadStats.processingStage === 'Error occurred'}
+      />
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
