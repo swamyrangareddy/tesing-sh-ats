@@ -2,6 +2,7 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
+// Configure axios defaults
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -137,13 +138,10 @@ export const getUserProfile = async () => {
 // Recruiter functions
 export const getRecruiters = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/recruiters`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    const response = await api.get('/recruiters');
+    return response.data || [];
   } catch (error) {
-    console.error('Error fetching recruiters:', error);
-    throw error;
+    throw handleError(error);
   }
 };
 
@@ -191,13 +189,10 @@ export const deleteRecruiter = async (id) => {
 // Job functions
 export const getJobs = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/jobs`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    const response = await api.get('/jobs');
+    return response;
   } catch (error) {
-    console.error('Error fetching jobs:', error);
-    throw error;
+    throw handleError(error);
   }
 };
 
@@ -251,13 +246,10 @@ export const deleteJob = async (id) => {
 // Submission functions
 export const getSubmissions = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/submissions`, {
-      headers: getAuthHeaders()
-    });
-    return handleResponse(response);
+    const response = await api.get('/submissions');
+    return response;
   } catch (error) {
-    console.error('Error fetching submissions:', error);
-    throw new Error('Failed to load submissions');
+    throw handleError(error);
   }
 };
 
@@ -346,7 +338,7 @@ export const uploadResume = async (formData) => {
 export const getResumes = async () => {
   try {
     const response = await api.get('/resumes');
-    return response.data;
+    return response;
   } catch (error) {
     throw handleError(error);
   }
@@ -392,12 +384,25 @@ export const downloadResume = async (resumeId, isPreview = false) => {
 
 export const deleteResume = async (resumeId) => {
   try {
-    const response = await api.delete(`/resumes/${resumeId}`);
-    return response.data;
+    const response = await fetch(`${API_BASE_URL}/resumes/${resumeId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to delete resume');
+    }
+
+    const result = await response.json();
+    return result;
   } catch (error) {
-    throw handleError(error);
+    console.error('Delete error:', error);
+    throw new Error(error.message || 'Failed to delete resume');
   }
-};
+}; 
 
 export const getResumeScore = async (id) => {
   try {
@@ -461,8 +466,13 @@ const handleError = (error) => {
     // Handle other error responses
     const message = error.response.data?.error || error.response.data?.message || 'An error occurred';
     return new Error(message);
+  } else if (error.request) {
+    // The request was made but no response was received
+    return new Error('Network error. Please check your connection.');
+  } else {
+    // Something happened in setting up the request that triggered an Error
+    return new Error(error.message || 'An unexpected error occurred');
   }
-  return error;
 };
 
 export const getJobByUrl = async (jobUrl) => {
@@ -493,34 +503,50 @@ export const applyForJob = async (jobUrl, applicationData) => {
 
 export const getPublicJob = async (shareableLink) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/jobs/share/${shareableLink}`);
-    return handleResponse(response);
+    const response = await fetch(`${API_BASE_URL}/jobs/share/${shareableLink}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to fetch job details');
+    }
+    
+    const data = await response.json();
+    
+    // Ensure the response has the required fields
+    if (!data || !data.title) {
+      throw new Error('Invalid job data received');
+    }
+    
+    return data;
   } catch (error) {
     console.error('Error getting public job:', error);
     throw error;
   }
-}
+};
 
-export const applyForPublicJob = async (shareableLink, applicationData) => {
+export const applyForPublicJob = async (shareableLink, formData) => {
   try {
-    console.log('Submitting application with data:', applicationData);
-
-    const response = await fetch(`${API_BASE_URL}/jobs/share/${shareableLink}/apply`, {
-      method : 'POST',
-      body : applicationData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Server error response:', errorData);
-      throw new Error(errorData.error || 'Failed to submit application');
-    }
-
-    const result = await response.json();
-    console.log('Application submitted successfully:', result);
-    return result;
+    const response = await axios.post(
+      `${API_BASE_URL}/jobs/share/${shareableLink}/apply`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
+    return response.data;
   } catch (error) {
-    console.error("Error submitting application:", error);
+    console.error('Error applying for public job:', error);
+    if (error.response) {
+      console.error('Server response:', error.response.data);
+      throw new Error(error.response.data.error || 'Failed to submit application');
+    }
     throw error;
   }
 };
@@ -544,6 +570,117 @@ export const downloadPublicResume = async (applicationId) => {
     return response.data;
   } catch (error) {
     console.error('Error downloading public resume:', error);
+    throw error;
+  }
+};
+
+// Public API endpoints
+export const getPublicRecruiters = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/public/recruiters`);
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching public recruiters:', error);
+    throw error;
+  }
+};
+
+export const getPublicJobs = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/public/jobs`);
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching public jobs:', error);
+    throw error;
+  }
+};
+
+export const getPublicSubmissions = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/public/submissions`);
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching public submissions:', error);
+    throw error;
+  }
+};
+
+export const getPublicResumes = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/public/resumes`);
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Error fetching public resumes:', error);
+    throw error;
+  }
+};
+
+export const processAndStoreResume = async (formData) => {
+    try {
+        const response = await fetch('http://localhost:5000/api/process-and-store-resume', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to process resume');
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error processing resume:', error);
+        throw error;
+    }
+};
+
+export const getResumesCount = async () => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await fetch('http://localhost:5000/api/resumes/count', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return { data: { count: data.count || 0 } };
+  } catch (error) {
+    console.error('Error fetching resumes count:', error);
+    return { data: { count: 0 } };
+  }
+};
+
+export const extractSkills = async (jobDescription) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/extract-skills`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({
+        job_description: jobDescription
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to extract skills');
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error extracting skills:', error);
     throw error;
   }
 };

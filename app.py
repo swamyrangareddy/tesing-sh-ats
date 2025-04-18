@@ -1,31 +1,47 @@
 # =============================================
 # Import Statements and Dependencies
 # =============================================
-from flask import Flask, request, jsonify, redirect, send_file, make_response
-from flask_cors import CORS
-from pymongo import MongoClient
-from bson import ObjectId
-import os
-from dotenv import load_dotenv
-from werkzeug.security import generate_password_hash, check_password_hash
-import jwt
-from datetime import datetime, timedelta
-from functools import wraps
+from flask import Flask, request, jsonify, redirect, send_file, make_response  # Core Flask functionality
+from flask_cors import CORS  # Handle Cross-Origin Resource Sharing
+from pymongo import MongoClient  # MongoDB database driver
+from bson import ObjectId  # MongoDB ObjectId handling
+import os  # Operating system utilities
+from dotenv import load_dotenv  # Environment variable management
+from werkzeug.security import generate_password_hash, check_password_hash  # Password hashing utilities
+import jwt  # JSON Web Token for authentication
+from datetime import datetime, timedelta  # Date and time utilities
+from functools import wraps  # Function decorator utilities
+
+# File Processing Packages
+from PyPDF2 import PdfReader  # PDF file reading
+import docx2txt  # DOCX file text extraction
+import io  # Input/output stream utilities
+import base64  # Base64 encoding/decoding
+
+# AI and Processing Packages
+import google.generativeai as genai  # Google's Generative AI (Gemini) API
+from sentence_transformers import SentenceTransformer  # Text embedding model
+from sklearn.metrics.pairwise import cosine_similarity  # Calculate similarity between vectors
+
+# Utility Packages
+import json  # JSON data handling
+import time  # Time-related functions
+from waitress import serve  # Production WSGI server
+from werkzeug.utils import secure_filename  # Secure file name handling
+from concurrent.futures import ThreadPoolExecutor, as_completed  # Parallel processing
+import traceback  # For printing exception stack trace
+
 import re
-import google.generativeai as genai
-from PyPDF2 import PdfReader
-import docx2txt
-import docx
-import io
-import base64
-import bcrypt
-import json
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import time
-from waitress import serve
-from werkzeug.utils import secure_filename
+
+# =============================================
+# Utility Functions
+# =============================================
+def is_valid_email(email):
+    """Validate email format using regex"""
+    if not email:
+        return False
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
 
 # =============================================
 # Environment Setup and Configuration
@@ -35,22 +51,11 @@ load_dotenv()
 
 app = Flask(__name__)
 # Configure CORS with additional options
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:3000", "http://127.0.0.1:3000"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
-        "expose_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True,
-        "max_age": 3600
-    }
-})
+CORS(app)
 
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'SECRET_KEY')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', '/app/uploads')
-
-
 
 # =============================================
 # Database Connection Setup
@@ -62,7 +67,7 @@ try:
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     # Verify connection
     client.server_info()
-    print("Successfully connected to MongoDB")
+    # print("Successfully connected to MongoDB")  # Comment out debug print
     db = client['ats_db']
 
     # Collections
@@ -73,8 +78,9 @@ try:
     submissions_collection = db['submissions']
     public_applications_collection = db['public_applications']
 except Exception as e:
-    print(f"Failed to connect to MongoDB: {str(e)}")
-    print("Starting Flask server without MongoDB connection. Some features will be unavailable.")
+    # print(f"Failed to connect to MongoDB: {str(e)}")  # Comment out debug print
+    # print("Starting Flask server without MongoDB connection. Some features will be unavailable.")  # Comment out debug print
+    pass
 
 # =============================================
 # AI Model Configuration
@@ -116,176 +122,141 @@ def extract_text_from_docx(docx_file):
         raise Exception(f"Error extracting text from DOCX: {str(e)}")
 
 def extract_text_from_file(file):
-    """Extract text from PDF or DOCX files"""
+    """Extract text from PDF or DOCX files with max length limit"""
     try:
         file_ext = os.path.splitext(file.filename)[1].lower()
         if file_ext == '.pdf':
-            return extract_text_from_pdf(file)
+            text = extract_text_from_pdf(file)
         elif file_ext in ['.docx', '.doc']:
-            return extract_text_from_docx(file)
+            text = extract_text_from_docx(file)
         else:
             raise ValueError("Unsupported file format. Please upload PDF or DOCX files only.")
+        
+        # Limit text length to 8000 characters
+        max_text_length = 8000
+        if len(text) > max_text_length:
+            text = text[:max_text_length] + "... [text truncated]"
+            
+        return text
     except Exception as e:
         raise Exception(f"Error extracting text from file: {str(e)}")
 
 def extract_resume_info(text):
-    """Extract resume information using Gemini AI with enhanced retry logic"""
+    """Extract resume information using Gemini AI with enhanced extraction"""
     try:
         # Initialize retry parameters
-        max_retries = 3
-        base_delay = 2  # Base delay in seconds
+        max_retries = 2
+        base_delay = 2
         retry_count = 0
+        max_text_length = 8000
         resume_info = None
-        last_error = None
-        extraction_stats = {
-            'attempts': 0,
-            'errors': [],
-            'validation_failures': []
+        valid_email = False
+
+        # Truncate text if it exceeds max_text_length
+        if len(text) > max_text_length:
+            text = text[:max_text_length] + "... [text truncated]"
+
+        # Generate detailed extraction prompt
+        prompt = """Extract the following information from the resume text in JSON format:
+        {
+            "name": "Full name of the candidate",
+            "email": "Email address",
+            "phone_number": "Phone number with country code if available",
+            "location": "Current location (City, State, Country)",
+            "current_role": "Current or most recent job title",
+            "current_company": "Current or most recent company",
+            "total_experience": "Total years of experience (number)",
+            "education": "Highest education qualification with major/specialization",
+            "skills": "List all technical and professional skills (comma-separated)",
+            "experience_details": [
+                {
+                    "title": "Job title",
+                    "company": "Company name",
+                    "duration": "Employment duration",
+                    "responsibilities": "Key responsibilities and achievements"
+                }
+            ]
         }
 
-        def validate_extracted_info(info):
-            """Validate extracted information"""
-            validation_errors = []
-            
-            # Check email format
-            email = info.get('email', '').strip()
-            if not email:
-                validation_errors.append('missing_email')
-            elif not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                validation_errors.append('invalid_email_format')
-            
-            # Check other critical fields
-            if not info.get('name', '').strip():
-                validation_errors.append('missing_name')
-            
-            # Validate skills format
-            skills = info.get('skills', [])
-            if isinstance(skills, str):
-                skills = [s.strip() for s in skills.split(',') if s.strip()]
-            if not skills:
-                validation_errors.append('missing_skills')
-            
-            return validation_errors
+        Requirements:
+        1. Ensure all dates and durations are properly formatted
+        2. Skills should be relevant and properly categorized
+        3. Extract complete location information if available
+        4. Include only factual information from the resume
+        5. Format experience details chronologically
+        6. Ensure education details include degree and major
+        7. Phone number should include country code if available
+        8. Email must be in valid format (name@domain.com)
 
-        while retry_count < max_retries:
+        Resume Text:
+        """ + text
+
+        while retry_count < max_retries and not valid_email:
             try:
-                extraction_stats['attempts'] += 1
-                
-                # Calculate exponential backoff delay
                 if retry_count > 0:
-                    delay = base_delay * (2 ** (retry_count - 1))  # Exponential backoff
-                    time.sleep(delay)
-                
-                # Generate prompt with more specific instructions
-                prompt = """Extract the following information from the resume text in JSON format:
-                - name (string): Full name of the candidate
-                - email (string): Email address (MUST be in valid format: name@domain.com)
-                - phone_number (string): Phone number with country code if available
-                - category (string): Specific job category based on skills and experience
-                - experience (number): Total years of experience
-                - education (string): Highest education qualification with major/specialization
-                - current_role (string): Current or most recent job title
-                - current_company (string): Current or most recent company
-                - location (string): Current location (City, State/Country)
-                - experience_details (array): Detailed work history
-                - skills (array): All technical and soft skills
+                    time.sleep(base_delay * (2 ** (retry_count - 1)))
 
-                Requirements:
-                1. Email MUST be a valid format (name@domain.com)
-                2. Do not return 'N/A' or placeholder values
-                3. Leave field empty if information is not found
-                4. Skills should be specific and relevant
-                5. Ensure consistent formatting
-
-                Return only the JSON object, no other text.
-                """
-                
-                response = model.generate_content(prompt + "\n\nResume Text:\n" + text)
+                # Generate response using Gemini
+                response = model.generate_content(prompt)
                 response_text = response.text.strip()
-                response_text = response_text.replace('```json', '').replace('```', '').strip()
                 
-                # Parse and validate JSON
+                # Clean and parse the response
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
                 result = json.loads(response_text)
                 
-                # Validate extracted information
-                validation_errors = validate_extracted_info(result)
-                
-                if validation_errors:
-                    extraction_stats['validation_failures'].append({
-                        'attempt': retry_count + 1,
-                        'errors': validation_errors
-                    })
+                # Validate essential fields
+                if not result.get('email') or not is_valid_email(result.get('email', '')):
                     retry_count += 1
                     continue
+
+                if not result.get('name'):
+                    retry_count += 1
+                    continue
+
+                # If we reach here, we have a valid email
+                valid_email = True
                 
-                # Success - store the result and break
-                resume_info = result
-                break
+                # Process skills if they're in array format
+                skills = result.get('skills', [])
+                if isinstance(skills, list):
+                    result['skills'] = ', '.join(skills)
+
+                return result
                 
             except json.JSONDecodeError as e:
-                last_error = f"JSON parsing error: {str(e)}"
-                extraction_stats['errors'].append({
-                    'attempt': retry_count + 1,
-                    'error_type': 'json_decode',
-                    'message': str(e)
-                })
+                print(f"JSON parsing error (attempt {retry_count + 1}): {str(e)}")
+                retry_count += 1
             except Exception as e:
-                last_error = f"Extraction error: {str(e)}"
-                extraction_stats['errors'].append({
-                    'attempt': retry_count + 1,
-                    'error_type': 'general',
-                    'message': str(e)
-                })
-            
-            retry_count += 1
+                print(f"Extraction error (attempt {retry_count + 1}): {str(e)}")
+                retry_count += 1
         
-        # If all retries failed
-        if not resume_info:
-            print(f"Resume extraction failed after {retry_count} attempts: {last_error}")
-            print("Extraction stats:", json.dumps(extraction_stats, indent=2))
-            
-            # Return default values with extraction stats
-            return {
-                "name": "",
-                "email": "",
-                "phone_number": "",
-                "category": "",
-                "experience": 0,
-                "education": "",
-                "current_role": "",
-                "current_company": "",
-                "location": "",
-                "experience_details": [],
-                "skills": [],
-                "extraction_stats": extraction_stats
-            }
-        
-        # Process successful extraction
-        # Convert skills array to comma-separated string if it's an array
-        if isinstance(resume_info.get('skills'), list):
-            resume_info['skills'] = ', '.join(resume_info['skills'])
-        
-        # Add extraction statistics
-        resume_info['extraction_stats'] = extraction_stats
-        
-        return resume_info
-        
-    except Exception as e:
-        print(f"Fatal error in extract_resume_info: {str(e)}")
-        # Return default values with error information
+        # If all retries failed, return default structure
         return {
             "name": "",
             "email": "",
             "phone_number": "",
-            "category": "",
-            "experience": 0,
-            "education": "",
+            "location": "",
             "current_role": "",
             "current_company": "",
-            "location": "",
-            "experience_details": [],
+            "total_experience": "",
+            "education": "",
             "skills": "",
-            "extraction_error": str(e)
+            "experience_details": []
+        }
+
+    except Exception as e:
+        print(f"Fatal error in extract_resume_info: {str(e)}")
+        return {
+            "name": "",
+            "email": "",
+            "phone_number": "",
+            "location": "",
+            "current_role": "",
+            "current_company": "",
+            "total_experience": "",
+            "education": "",
+            "skills": "",
+            "experience_details": []
         }
 
 def validate_password(password):
@@ -360,7 +331,7 @@ def signup():
             return jsonify({'error': 'Missing required fields'}), 400
         
         # Validate email format
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", data['email']):
+        if not is_valid_email(data['email']):
             return jsonify({'error': 'Invalid email format'}), 400
         
         # Validate password
@@ -369,8 +340,9 @@ def signup():
             return jsonify({'error': password_message}), 400
         
         # Check if email or username already exists
-        if users_collection.find_one({'email': data['email']}):
-            return jsonify({'error': 'Email already exists'}), 400
+        existing_email = users_collection.find_one({'email': data['email']})
+        if existing_email:
+            return jsonify({'error': f"The user with email {data['email']} already exists. Please try logging in or use a different email."}), 400
         
         if users_collection.find_one({'username': data['username']}):
             return jsonify({'error': 'Username already exists'}), 400
@@ -433,10 +405,10 @@ def login():
 def get_recruiters(current_user):
     """Get all recruiters for the current user"""
     try:
-        recruiters = list(recruiters_collection.find({'user_id': str(current_user['_id'])}))
+        recruiters = list(recruiters_collection.find())
         for recruiter in recruiters:
             recruiter['_id'] = str(recruiter['_id'])
-            recruiter['id'] = str(recruiter['_id'])  # Add id field for frontend compatibility
+            recruiter['id'] = str(recruiter['_id'])
         return jsonify(recruiters)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -464,7 +436,7 @@ def create_recruiter(current_user):
         return jsonify({'error': 'Name and email are required fields'}), 400
     
     # Validate email format
-    if not re.match(r"[^@]+@[^@]+\.[^@]+", recruiter['email']):
+    if not is_valid_email(recruiter['email']):
         return jsonify({'error': 'Invalid email format'}), 400
     
     # Validate country code format if provided
@@ -483,29 +455,16 @@ def update_recruiter(current_user, recruiter_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     
-    # Validate email format if provided
-    if data.get('email') and not re.match(r"[^@]+@[^@]+\.[^@]+", data['email']):
-        return jsonify({'error': 'Invalid email format'}), 400
-    
-    # Validate country code format if provided
-    if data.get('country_code') and not re.match(r"^\+\d{1,4}$", data['country_code']):
-        return jsonify({'error': 'Invalid country code format. Use format: +XX'}), 400
-    
     try:
         result = recruiters_collection.update_one(
-            {
-                '_id': ObjectId(recruiter_id),
-                'user_id': str(current_user['_id'])
-            },
+            {'_id': ObjectId(recruiter_id)},
             {'$set': data}
         )
-        if result.modified_count == 0:
-            return jsonify({'error': 'Recruiter not found or unauthorized'}), 404
         
-        updated_recruiter = recruiters_collection.find_one({
-            '_id': ObjectId(recruiter_id),
-            'user_id': str(current_user['_id'])
-        })
+        if result.modified_count == 0:
+            return jsonify({'error': 'Recruiter not found'}), 404
+        
+        updated_recruiter = recruiters_collection.find_one({'_id': ObjectId(recruiter_id)})
         updated_recruiter['_id'] = str(updated_recruiter['_id'])
         return jsonify(updated_recruiter)
     except Exception as e:
@@ -517,11 +476,10 @@ def delete_recruiter(current_user, recruiter_id):
     """Delete a recruiter"""
     try:
         result = recruiters_collection.delete_one({
-            '_id': ObjectId(recruiter_id),
-            'user_id': str(current_user['_id'])
+            '_id': ObjectId(recruiter_id)
         })
         if result.deleted_count == 0:
-            return jsonify({'error': 'Recruiter not found or unauthorized'}), 404
+            return jsonify({'error': 'Recruiter not found'}), 404
         return jsonify({'message': 'Recruiter deleted successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -537,7 +495,7 @@ def get_submissions(current_user):
         print(f"Fetching submissions for user: {current_user['_id']}")  # Debug log
         
         # Get all submissions for the current user
-        submissions = list(submissions_collection.find({'user_id': str(current_user['_id'])}))
+        submissions = list(submissions_collection.find())
         print(f"Found {len(submissions)} submissions")  # Debug log
         
         # Convert ObjectId to string and clean up response
@@ -567,9 +525,15 @@ def get_submissions(current_user):
             
             # Convert datetime objects to ISO format strings
             if 'created_at' in submission:
-                submission['created_at'] = submission['created_at'].isoformat()
+                if isinstance(submission['created_at'], datetime):
+                    submission['created_at'] = submission['created_at'].isoformat()
+                elif isinstance(submission['created_at'], str):
+                    submission['created_at'] = datetime.fromisoformat(submission['created_at']).isoformat()
             if 'updated_at' in submission:
-                submission['updated_at'] = submission['updated_at'].isoformat()
+                if isinstance(submission['updated_at'], datetime):
+                    submission['updated_at'] = submission['updated_at'].isoformat()
+                elif isinstance(submission['updated_at'], str):
+                    submission['updated_at'] = datetime.fromisoformat(submission['updated_at']).isoformat()
         
         print("Submissions processed successfully")  # Debug log
         return jsonify(submissions)
@@ -656,19 +620,13 @@ def update_submission(current_user, submission_id):
     
     try:
         result = submissions_collection.update_one(
-            {
-                '_id': ObjectId(submission_id),
-                'user_id': str(current_user['_id'])
-            },
+            {'_id': ObjectId(submission_id)},
             {'$set': data}
         )
         if result.modified_count == 0:
-            return jsonify({'error': 'Submission not found or unauthorized'}), 404
+            return jsonify({'error': 'Submission not found'}), 404
         
-        updated_submission = submissions_collection.find_one({
-            '_id': ObjectId(submission_id),
-            'user_id': str(current_user['_id'])
-        })
+        updated_submission = submissions_collection.find_one({'_id': ObjectId(submission_id)})
         updated_submission['_id'] = str(updated_submission['_id'])
         return jsonify(updated_submission)
     except Exception as e:
@@ -680,11 +638,10 @@ def delete_submission(current_user, submission_id):
     """Delete a submission"""
     try:
         result = submissions_collection.delete_one({
-            '_id': ObjectId(submission_id),
-            'user_id': str(current_user['_id'])
+            '_id': ObjectId(submission_id)
         })
         if result.deleted_count == 0:
-            return jsonify({'error': 'Submission not found or unauthorized'}), 404
+            return jsonify({'error': 'Submission not found'}), 404
         return jsonify({'message': 'Submission deleted successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -697,7 +654,7 @@ def delete_submission(current_user, submission_id):
 def get_resumes(current_user):
     """Get all resumes for the current user"""
     try:
-        resumes = list(resumes_collection.find({'user_id': str(current_user['_id'])}))
+        resumes = list(resumes_collection.find())
         # Convert ObjectId to string and clean up response
         for resume in resumes:
             resume['_id'] = str(resume['_id'])
@@ -717,19 +674,31 @@ def get_resumes(current_user):
 @app.route('/api/resumes', methods=['POST'])
 @token_required
 def upload_resume(current_user):
-    """Upload and process a new resume"""
-    results = []  # Initialize results list
+    """Upload and process multiple resumes in parallel with optimized failure handling"""
+    results = []
+    failed_files = []
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
 
-        files = request.files.getlist('file')  # Get all files
+        files = request.files.getlist('file')
         if not files or files[0].filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        # Process each file
+        # Initialize Gemini model
+        genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+        model = genai.GenerativeModel(
+            'gemini-2.0-flash-exp',
+            generation_config={
+                "temperature": 0.1,
+                "top_p": 0.95,
+                "max_output_tokens": 2048,
+            }
+        )
+
+        # First pass: Validate all files and collect valid ones
+        valid_files = []
         for file in files:
-            # Validate file extension
             file_ext = os.path.splitext(file.filename)[1].lower()
             if file_ext not in ['.pdf', '.docx', '.doc']:
                 results.append({
@@ -739,164 +708,211 @@ def upload_resume(current_user):
                     'message': 'Invalid file format. Please upload PDF or DOCX files only.'
                 })
                 continue
+            valid_files.append(file)
 
-            try:
-                # Extract text from file
-                resume_text = extract_text_from_file(file)
-                if not resume_text:
-                    results.append({
+        if not valid_files:
+            return jsonify({
+                'total_files': len(files),
+                'results': results,
+                'message': 'No valid files to process'
+            })
+
+        # Process files in parallel with optimized ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Submit all files for processing
+            future_to_file = {
+                executor.submit(process_single_resume, file, model, current_user): file 
+                for file in valid_files
+            }
+
+            # Process results as they complete with timeout
+            for future in as_completed(future_to_file, timeout=300):  # 5 minutes timeout
+                file = future_to_file[future]
+                try:
+                    result = future.result(timeout=60)  # 1 minute timeout per file
+                    if result.get('status') == 'error':
+                        failed_files.append((file, result))
+                    else:
+                        results.append(result)
+                except TimeoutError:
+                    failed_files.append((file, {
                         'status': 'error',
-                        'error': 'text_extraction_failed',
+                        'error': 'timeout',
                         'filename': file.filename,
-                        'message': 'Failed to extract text from file'
-                    })
-                    continue
-                
-                # Extract resume information using Gemini with retry
-                max_retries = 3
-                retry_count = 0
-                resume_info = None
-                valid_email = False
-                
-                while retry_count < max_retries and not valid_email:
-                    try:
-                        resume_info = extract_resume_info(resume_text)
-                        email = resume_info.get('email', '').strip()
-                        
-                        # Validate email format
-                        if email and re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                            # Check if email already exists
-                            existing_resume = resumes_collection.find_one({
-                                'user_id': str(current_user['_id']),
-                                'email': email
-                            })
-                            
-                            if existing_resume:
-                                # Update existing resume with new information
-                                update_data = {
-                                    'filename': file.filename,
-                                    'content_type': file.content_type,
-                                    'text_content': resume_text,
-                                    'name': resume_info.get('name', existing_resume.get('name', '')),
-                                    'phone_number': resume_info.get('phone_number', existing_resume.get('phone_number', '')),
-                                    'job_title': resume_info.get('current_role', existing_resume.get('job_title', '')),
-                                    'current_job': resume_info.get('current_company', existing_resume.get('current_job', '')),
-                                    'skills': resume_info.get('skills', existing_resume.get('skills', '')),
-                                    'location': resume_info.get('location', existing_resume.get('location', '')),
-                                    'resume_summary': resume_info.get('education', existing_resume.get('resume_summary', '')),
-                                    'experience': resume_info.get('experience_details', existing_resume.get('experience', [])),
-                                    'category': resume_info.get('category', existing_resume.get('category', '')),
-                                    'updated_at': datetime.utcnow(),
-                                    'extraction_retries': retry_count
-                                }
-                                
-                                # Update file data if new file is provided
-                                file.seek(0)
-                                file_data = base64.b64encode(file.read()).decode('utf-8')
-                                update_data['file_data'] = file_data
-                                
-                                resumes_collection.update_one(
-                                    {'_id': existing_resume['_id']},
-                                    {'$set': update_data}
-                                )
-                                
-                                results.append({
-                                    'status': 'success',
-                                    'id': str(existing_resume['_id']),
-                                    'filename': file.filename,
-                                    'name': resume_info.get('name', ''),
-                                    'email': email,
-                                    'skills': resume_info.get('skills', ''),
-                                    'retries': retry_count,
-                                    'message': 'Resume updated successfully'
-                                })
-                                valid_email = True
-                            else:
-                                # Store new resume
-                                file.seek(0)
-                                file_data = base64.b64encode(file.read()).decode('utf-8')
-                                
-                                resume = {
-                                    'user_id': str(current_user['_id']),
-                                    'filename': file.filename,
-                                    'content_type': file.content_type,
-                                    'file_data': file_data,
-                                    'text_content': resume_text,
-                                    'name': resume_info.get('name', ''),
-                                    'email': email,
-                                    'phone_number': resume_info.get('phone_number', ''),
-                                    'job_title': resume_info.get('current_role', ''),
-                                    'current_job': resume_info.get('current_company', ''),
-                                    'skills': resume_info.get('skills', ''),
-                                    'location': resume_info.get('location', ''),
-                                    'resume_summary': resume_info.get('education', ''),
-                                    'experience': resume_info.get('experience_details', []),
-                                    'category': resume_info.get('category', ''),
-                                    'created_at': datetime.utcnow(),
-                                    'updated_at': datetime.utcnow(),
-                                    'extraction_retries': retry_count
-                                }
-                                
-                                result = resumes_collection.insert_one(resume)
-                                
-                                results.append({
-                                    'status': 'success',
-                                    'id': str(result.inserted_id),
-                                    'filename': file.filename,
-                                    'name': resume_info.get('name', ''),
-                                    'email': email,
-                                    'skills': resume_info.get('skills', ''),
-                                    'retries': retry_count,
-                                    'message': 'Resume uploaded successfully'
-                                })
-                                valid_email = True
-                        else:
-                            retry_count += 1
-                            if retry_count == max_retries:
-                                results.append({
-                                    'status': 'error',
-                                    'error': 'invalid_email',
-                                    'filename': file.filename,
-                                    'message': 'Failed to extract valid email after multiple attempts'
-                                })
-                            else:
-                                time.sleep(5)  # Wait 5 seconds before retry
-                                continue
-                                
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count == max_retries:
-                            results.append({
-                                'status': 'error',
-                                'error': 'info_extraction_failed',
-                                'filename': file.filename,
-                                'message': str(e)
-                            })
-                        else:
-                            time.sleep(5)  # Wait 5 seconds before retry
-                            continue
-                
-                # Add delay between processing each resume
-                time.sleep(5)  # 5 second delay between each resume
-                
-            except Exception as e:
-                results.append({
-                    'status': 'error',
-                    'error': 'processing_failed',
-                    'filename': file.filename,
-                    'message': str(e)
-                })
+                        'message': 'Processing timeout'
+                    }))
+                except Exception as e:
+                    failed_files.append((file, {
+                        'status': 'error',
+                        'error': 'processing_failed',
+                        'filename': file.filename,
+                        'message': str(e)
+                    }))
+
+        # Quick retry for failed files with reduced retry attempts
+        if failed_files:
+            retry_results = []
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                for file, error in failed_files:
+                    # Only retry if it's not a format error
+                    if error.get('error') not in ['invalid_format']:
+                        future = executor.submit(process_single_resume, file, model, current_user)
+                        try:
+                            result = future.result(timeout=30)  # 30 seconds timeout for retry
+                            retry_results.append(result)
+                        except Exception:
+                            retry_results.append(error)
+                    else:
+                        retry_results.append(error)
+            
+            # Update results with retry outcomes
+            results.extend(retry_results)
+
+        # Log summary of results
+        successful = len([r for r in results if r.get('status') == 'success'])
+        failed = len([r for r in results if r.get('status') == 'error'])
+        print(f"Resume upload summary: {successful} successful, {failed} failed out of {len(files)} total files")
         
         return jsonify({
             'total_files': len(files),
-            'results': results
+            'successful': successful,
+            'failed': failed,
+            'results': results,
+            'message': f'Processed {len(files)} files. {successful} successful, {failed} failed.'
         })
-        
+
     except Exception as e:
+        print(f"Error in upload_resume: {str(e)}")
         return jsonify({
             'error': 'upload_failed',
             'message': str(e)
         }), 500
+
+def process_single_resume(file, model, current_user):
+    """Process a single resume file with optimized retry logic"""
+    max_retries = 2  
+    retry_count = 0
+    resume_info = None
+    valid_email = False
+    error_logged = False  # Flag to track if error has been logged
+
+    while retry_count < max_retries and not valid_email:
+        try:
+            # Extract text from file
+            resume_text = extract_text_from_file(file)
+            if not resume_text:
+                if not error_logged:
+                    # print(f"Failed to extract text from file: {file.filename}")  # Comment out debug print
+                    error_logged = True
+                return {
+                    'status': 'error',
+                    'error': 'text_extraction_failed',
+                    'filename': file.filename,
+                    'message': 'Failed to extract text from file'
+                }
+
+            # Extract resume information using Gemini
+            resume_info = extract_resume_info(resume_text)
+            email = resume_info.get('email', '').strip()
+
+            # Validate email format
+            if email and is_valid_email(email):
+                # Check if email already exists
+                existing_resume = resumes_collection.find_one({
+                    'user_id': str(current_user['_id']),
+                    'email': email
+                })
+
+                # Prepare resume data
+                file.seek(0)
+                file_data = base64.b64encode(file.read()).decode('utf-8')
+                
+                resume_data = {
+                    'user_id': str(current_user['_id']),
+                    'filename': file.filename,
+                    'content_type': file.content_type,
+                    'file_data': file_data,
+                    'text_content': resume_text,
+                    'name': resume_info.get('name', ''),
+                    'email': email,
+                    'phone_number': resume_info.get('phone_number', ''),
+                    'job_title': resume_info.get('current_role', ''),
+                    'current_job': resume_info.get('current_company', ''),
+                    'skills': resume_info.get('skills', ''),
+                    'location': resume_info.get('location', ''),
+                    'linkedin': resume_info.get('linkedin', ''),
+                    'education': resume_info.get('education', ''),
+                    'resume_summary': resume_info.get('professional_summary_resume', ''),
+                    'experience': resume_info.get('experience_details', []),
+                    'category': resume_info.get('category', ''),
+                    'created_at': datetime.utcnow(),
+                    'updated_at': datetime.utcnow(),
+                    'extraction_retries': retry_count
+                }
+
+                if existing_resume:
+                    # Update existing resume
+                    resumes_collection.update_one(
+                        {'_id': existing_resume['_id']},
+                        {'$set': resume_data}
+                    )
+                    return {
+                        'status': 'success',
+                        'id': str(existing_resume['_id']),
+                        'filename': file.filename,
+                        'name': resume_info.get('name', ''),
+                        'email': email,
+                        'skills': resume_info.get('skills', ''),
+                        'retries': retry_count,
+                        'message': 'Resume updated successfully'
+                    }
+                else:
+                    # Insert new resume
+                    result = resumes_collection.insert_one(resume_data)
+                    return {
+                        'status': 'success',
+                        'id': str(result.inserted_id),
+                        'filename': file.filename,
+                        'name': resume_info.get('name', ''),
+                        'email': email,
+                        'skills': resume_info.get('skills', ''),
+                        'retries': retry_count,
+                        'message': 'Resume uploaded successfully'
+                    }
+            else:
+                retry_count += 1
+                if retry_count == max_retries and not error_logged:
+                    # print(f"Failed to extract valid email from {file.filename} after {max_retries} attempts")  # Comment out debug print
+                    error_logged = True
+                    return {
+                        'status': 'error',
+                        'error': 'invalid_email',
+                        'filename': file.filename,
+                        'message': 'Failed to extract valid email after multiple attempts'
+                    }
+                time.sleep(2)  # Reduced wait time from 5 to 2 seconds
+
+        except Exception as e:
+            retry_count += 1
+            if retry_count == max_retries and not error_logged:
+                # print(f"Error processing resume {file.filename}: {str(e)}")  # Comment out debug print
+                error_logged = True
+                return {
+                    'status': 'error',
+                    'error': 'info_extraction_failed',
+                    'filename': file.filename,
+                    'message': str(e)
+                }
+            time.sleep(2)  # Reduced wait time from 5 to 2 seconds
+
+    if not error_logged:
+        # print(f"Failed to process resume {file.filename} after maximum retries")  # Comment out debug print
+        return {
+            'status': 'error',
+            'error': 'processing_failed',
+            'filename': file.filename,
+            'message': 'Failed to process resume after maximum retries'
+        }
 
 @app.route('/api/resumes/<resume_id>/preview', methods=['GET'])
 @token_required
@@ -905,25 +921,41 @@ def preview_resume(current_user, resume_id):
     try:
         # Find the resume
         resume = resumes_collection.find_one({
-            '_id': ObjectId(resume_id),
-            'user_id': str(current_user['_id'])
+            '_id': ObjectId(resume_id)
         })
         
         if not resume:
             return jsonify({'error': 'Resume not found'}), 404
 
-        # Get file data and content type
-        file_data = base64.b64decode(resume['file_data'])
-        content_type = resume['content_type']
+        # Get file data
+        if 'file_data' not in resume:
+            return jsonify({'error': 'Resume file data not found'}), 404
+
+        try:
+            file_data = base64.b64decode(resume['file_data'])
+        except Exception as e:
+            # print(f"Error decoding file data: {str(e)}")  # Comment out debug print
+            return jsonify({'error': 'Invalid file data'}), 500
+
+        if not file_data:
+            return jsonify({'error': 'Empty file data'}), 404
+
+        # Get content type from filename or default to PDF
+        content_type = 'application/pdf'
+        if resume.get('file_name', '').lower().endswith('.docx'):
+            content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        elif resume.get('file_name', '').lower().endswith('.doc'):
+            content_type = 'application/msword'
         
         # Create response with file data
         response = make_response(file_data)
         response.headers['Content-Type'] = content_type
-        response.headers['Content-Disposition'] = f'inline; filename={resume["filename"]}'
+        response.headers['Content-Disposition'] = f'inline; filename={resume.get("file_name", "resume.pdf")}'
         
         return response
 
     except Exception as e:
+        # print(f"Error in preview_resume: {str(e)}")  # Comment out debug print
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/resumes/<resume_id>/download', methods=['GET'])
@@ -933,25 +965,41 @@ def download_resume(current_user, resume_id):
     try:
         # Find the resume
         resume = resumes_collection.find_one({
-            '_id': ObjectId(resume_id),
-            'user_id': str(current_user['_id'])
+            '_id': ObjectId(resume_id)
         })
         
         if not resume:
             return jsonify({'error': 'Resume not found'}), 404
 
-        # Get file data and content type
-        file_data = base64.b64decode(resume['file_data'])
-        content_type = resume['content_type']
+        # Get file data
+        if 'file_data' not in resume:
+            return jsonify({'error': 'Resume file data not found'}), 404
+
+        try:
+            file_data = base64.b64decode(resume['file_data'])
+        except Exception as e:
+            # print(f"Error decoding file data: {str(e)}")  # Comment out debug print
+            return jsonify({'error': 'Invalid file data'}), 500
+
+        if not file_data:
+            return jsonify({'error': 'Empty file data'}), 404
+
+        # Get content type from filename or default to PDF
+        content_type = 'application/pdf'
+        if resume.get('file_name', '').lower().endswith('.docx'):
+            content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        elif resume.get('file_name', '').lower().endswith('.doc'):
+            content_type = 'application/msword'
         
         # Create response with file data
         response = make_response(file_data)
         response.headers['Content-Type'] = content_type
-        response.headers['Content-Disposition'] = f'attachment; filename={resume["filename"]}'
+        response.headers['Content-Disposition'] = f'attachment; filename={resume.get("file_name", "resume.pdf")}'
         
         return response
 
     except Exception as e:
+        # print(f"Error in download_resume: {str(e)}")  # Comment out debug print
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/resumes/<resume_id>', methods=['GET'])
@@ -974,22 +1022,40 @@ def get_resume(current_user, resume_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/resumes/<resume_id>', methods=['DELETE'])
-@token_required
-def delete_resume(current_user, resume_id):
+@app.route('/api/resumes/<resume_id>', methods=['DELETE', 'OPTIONS'])
+def delete_resume(resume_id):
     """Delete a resume"""
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'DELETE')
+        return response
+
     try:
-        result = resumes_collection.delete_one({
-            '_id': ObjectId(resume_id),
-            'user_id': str(current_user['_id'])
-        })
+        # Find the resume first to check if it exists
+        resume = resumes_collection.find_one({'_id': ObjectId(resume_id)})
+        if not resume:
+            response = jsonify({'error': 'Resume not found'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response, 404
+            
+        # Delete the resume
+        result = resumes_collection.delete_one({'_id': ObjectId(resume_id)})
         
         if result.deleted_count == 0:
-            return jsonify({'error': 'Resume not found or unauthorized'}), 404
+            response = jsonify({'error': 'Failed to delete resume'})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response, 500
             
-        return jsonify({'message': 'Resume deleted successfully'})
+        response = jsonify({'message': 'Resume deleted successfully'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # print(f"Error deleting resume: {str(e)}")  # Comment out debug print
+        response = jsonify({'error': str(e)})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response, 500
 
 @app.route('/api/resumes/<resume_id>/reprocess', methods=['POST'])
 @token_required
@@ -1015,7 +1081,7 @@ def reprocess_resume(current_user, resume_id):
             }), 400
 
         # Extract resume information using Gemini with retry
-        max_retries = 3
+        max_retries = 2
         retry_count = 0
         resume_info = None
         
@@ -1181,7 +1247,7 @@ def search_resumes_by_email(current_user):
 def get_jobs(current_user):
     """Get all jobs for the current user"""
     try:
-        jobs = list(jobs_collection.find({'user_id': str(current_user['_id'])}))
+        jobs = list(jobs_collection.find())
         for job in jobs:
             job['_id'] = str(job['_id'])
             # Convert ObjectId to string for the job id
@@ -1260,42 +1326,50 @@ def apply_for_public_job(shareable_link):
         if not job:
             return jsonify({'error': 'Job not found'}), 404
 
-        # Create uploads directory if it doesn't exist
-        uploads_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'public_resumes')
-        os.makedirs(uploads_dir, exist_ok=True)
+        # Get resume_data from the form
+        resume_data = json.loads(request.form.get('resume_data', '{}'))
+        resume_id = request.form.get('resume_id')
 
-        # Get the resume file
-        if 'resume' not in request.files:
-            return jsonify({'error': 'No resume file provided'}), 400
-        
-        resume_file = request.files['resume']
-        if resume_file.filename == '':
-            return jsonify({'error': 'No selected file'}), 400
+        if not resume_id:
+            return jsonify({'error': 'Resume ID is required'}), 400
 
-        # Generate a unique filename while preserving the original extension
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        original_filename = secure_filename(resume_file.filename)
-        file_extension = os.path.splitext(original_filename)[1]
-        unique_filename = f"{timestamp}_{original_filename}"
-        resume_path = os.path.join('public_resumes', unique_filename)
+        # Update the resume with new information
+        update_data = {
+            'name': resume_data.get('name'),
+            'email': resume_data.get('email'),
+            'phone_number': resume_data.get('phone_number'),
+            'location': resume_data.get('location'),
+            'skills': resume_data.get('skills'),
+            'education': resume_data.get('education'),
+            'experience_details': resume_data.get('experience_details', []),
+            'linkedin': resume_data.get('linkedin'),
+            'updated_at': datetime.utcnow()
+        }
 
-        # Save the resume file
-        resume_file.save(os.path.join(uploads_dir, unique_filename))
+        # Update the resume in the database
+        result = resumes_collection.update_one(
+            {'_id': ObjectId(resume_id)},
+            {'$set': update_data}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({'error': 'Resume not found'}), 404
 
         # Create new public application
         new_application = {
             'job_id': job['_id'],
-            'name': request.form.get('name'),
-            'email': request.form.get('email'),
-            'phone': request.form.get('phone'),
-            'linkedin_url': request.form.get('linkedin_url'),
+            'resume_id': resume_id,
+            'name': resume_data.get('name'),
+            'email': resume_data.get('email'),
+            'phone': resume_data.get('phone_number'),
+            'linkedin_url': resume_data.get('linkedin'),
             'state': request.form.get('state'),
+            'city': request.form.get('city'),
             'country': request.form.get('country'),
-            'expected_pay_rate': request.form.get('expected_pay_rate'),
+            'visa_type': request.form.get('visa_type'),
             'status': 'Submitted',
-            'resume_path': resume_path,
-            'created_at': datetime.now(),
-            'updated_at': datetime.now()
+            'created_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow()
         }
 
         result = public_applications_collection.insert_one(new_application)
@@ -1315,35 +1389,55 @@ def apply_for_public_job(shareable_link):
 @token_required
 def get_public_applications(current_user):
     try:
-        # Get all jobs created by the current user
-        user_jobs = jobs_collection.find({'user_id': str(current_user['_id'])}, {'_id': 1})
-        job_ids = [str(job['_id']) for job in user_jobs]
+        print("=== Debug: get_public_applications ===")
+        print(f"Current user ID: {current_user['_id']}")
         
-        # Get all public applications for these jobs
-        applications = public_applications_collection.find({'job_id': {'$in': job_ids}})
+        # Get all jobs created by the current user
+        user_jobs = list(jobs_collection.find({'user_id': str(current_user['_id'])}, {'_id': 1}))
+        job_ids = [str(job['_id']) for job in user_jobs]
+        print(f"Found {len(job_ids)} jobs for user")
+        print(f"Job IDs: {job_ids}")
+        
+        # Get all public applications and convert cursor to list
+        all_applications = list(public_applications_collection.find())
+        print(f"Total applications in DB: {len(all_applications)}")
+        
+        # Get applications for user's jobs
+        applications = list(public_applications_collection.find({'job_id': {'$in': job_ids}}))
+        print(f"Applications matching user's jobs: {len(applications)}")
+        
+        # Debug: Print raw application data
+        for app in applications:
+            print(f"Application: job_id={app.get('job_id')}, name={app.get('name')}")
         
         # Format the response
         result = []
         for app in applications:
-            job = jobs_collection.find_one({'_id': ObjectId(app['job_id'])})
-            result.append({
-                'id': app['_id'],
-                'job_id': app['job_id'],
-                'job_title': job.get('title', 'Unknown Job'),
-                'company_name': job.get('client', 'Unknown Company'),
-                'name': app['name'],
-                'email': app['email'],
-                'phone': app['phone'],
-                'linkedin_url': app['linkedin_url'],
-                'state': app['state'],
-                'country': app['country'],
-                'expected_pay_rate': app['expected_pay_rate'],
-                'status': app['status'],
-                'resume_path': app['resume_path'],
-                'created_at': app['created_at'].isoformat() if app['created_at'] else None,
-                'updated_at': app['updated_at'].isoformat() if app['updated_at'] else None
-            })
+            try:
+                job = jobs_collection.find_one({'_id': ObjectId(app['job_id'])})
+                if job:
+                    result.append({
+                        'id': str(app['_id']),
+                        'job_id': str(app['job_id']),
+                        'job_title': job.get('title', 'Unknown Job'),
+                        'company_name': job.get('client', 'Unknown Company'),
+                        'name': app.get('name', ''),
+                        'email': app.get('email', ''),
+                        'phone': app.get('phone', ''),
+                        'linkedin_url': app.get('linkedin_url', ''),
+                        'state': app.get('state', ''),
+                        'country': app.get('country', ''),
+                        'expected_pay_rate': app.get('expected_pay_rate', ''),
+                        'status': app.get('status', 'pending'),
+                        'resume_path': app.get('resume_path', ''),
+                        'created_at': app['created_at'].isoformat() if app.get('created_at') else None,
+                        'updated_at': app['updated_at'].isoformat() if app.get('updated_at') else None
+                    })
+            except Exception as e:
+                print(f"Error processing application {app.get('_id')}: {str(e)}")
+                continue
         
+        print(f"Returning {len(result)} formatted applications")
         return jsonify(result)
     except Exception as e:
         print(f"Error in get_public_applications: {str(e)}")
@@ -1359,10 +1453,14 @@ def download_public_resume(current_user, application_id):
             return jsonify({'error': 'Application not found'}), 404
             
         # Verify the user has access to this application
-        job = jobs_collection.find_one({'_id': ObjectId(application['job_id'])})
-        if not job or job['user_id'] != str(current_user['_id']):
-            return jsonify({'error': 'Unauthorized'}), 403
+        job = jobs_collection.find_one({
+            '_id': ObjectId(application['job_id']),
+            'user_id': str(current_user['_id'])
+        })
         
+        if not job:
+            return jsonify({'error': 'Unauthorized'}), 403
+            
         if not os.path.exists(application['resume_path']):
             return jsonify({'error': 'Resume file not found'}), 404
 
@@ -1389,10 +1487,6 @@ def update_job(current_user, job_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
         
-        # Validate required fields
-        if 'title' in data and not data['title']:
-            return jsonify({'error': 'Job title cannot be empty'}), 400
-        
         # Remove _id from data if present
         if '_id' in data:
             del data['_id']
@@ -1405,30 +1499,21 @@ def update_job(current_user, job_id):
             if data['status'] not in ['open', 'closed']:
                 return jsonify({'error': 'Invalid status value. Must be either "open" or "closed"'}), 400
         
-        # Update the job
+        # Update the job without user_id check
         result = jobs_collection.update_one(
-            {
-                '_id': ObjectId(job_id),
-                'user_id': str(current_user['_id'])
-            },
+            {'_id': ObjectId(job_id)},
             {'$set': data}
         )
         
         if result.modified_count == 0:
             # Check if job exists
-            job = jobs_collection.find_one({
-                '_id': ObjectId(job_id),
-                'user_id': str(current_user['_id'])
-            })
+            job = jobs_collection.find_one({'_id': ObjectId(job_id)})
             if not job:
                 return jsonify({'error': 'Job not found'}), 404
             return jsonify({'error': 'No changes were made to the job'}), 400
         
         # Fetch and return the updated job
-        updated_job = jobs_collection.find_one({
-            '_id': ObjectId(job_id),
-            'user_id': str(current_user['_id'])
-        })
+        updated_job = jobs_collection.find_one({'_id': ObjectId(job_id)})
         
         if updated_job:
             updated_job['_id'] = str(updated_job['_id'])
@@ -1447,29 +1532,21 @@ def delete_job(current_user, job_id):
     """Delete a job"""
     try:
         # First check if there are any submissions linked to this job
-        submissions = submissions_collection.find_one({
-            'job_id': job_id,
-            'user_id': str(current_user['_id'])
-        })
+        submissions = submissions_collection.find_one({'job_id': job_id})
         
         if submissions:
             return jsonify({
                 'error': 'Cannot delete job with existing submissions. Please delete the submissions first.'
             }), 400
         
-        result = jobs_collection.delete_one({
-            '_id': ObjectId(job_id),
-            'user_id': str(current_user['_id'])
-        })
+        result = jobs_collection.delete_one({'_id': ObjectId(job_id)})
         
         if result.deleted_count == 0:
-            return jsonify({'error': 'Job not found or unauthorized'}), 404
+            return jsonify({'error': 'Job not found'}), 404
             
         return jsonify({'message': 'Job deleted successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-
 
 # =============================================
 # ATS (Applicant Tracking System) Routes
@@ -1629,9 +1706,251 @@ def delete_public_application(current_user, application_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/resumes/count', methods=['GET'])
+@token_required
+def get_resumes_count(current_user):
+    """Get the total count of resumes in the collection and last modified timestamp"""
+    try:
+        # Get the most recent updated_at timestamp from the collection
+        last_modified = resumes_collection.find_one(
+            sort=[('updated_at', -1)],
+            projection={'updated_at': 1}
+        )
+        
+        count = resumes_collection.count_documents({})
+        return jsonify({
+            'count': count,
+            'last_modified': last_modified['updated_at'].isoformat() if last_modified and 'updated_at' in last_modified else None
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# =============================================
+# Public Routes
+# =============================================
+@app.route('/api/public/recruiters', methods=['GET'])
+@token_required
+def get_public_recruiters(current_user):
+    """Get all recruiters from all users"""
+    try:
+        recruiters = list(recruiters_collection.find({}))
+        for recruiter in recruiters:
+            recruiter['_id'] = str(recruiter['_id'])
+            recruiter['id'] = str(recruiter['_id'])
+        return jsonify(recruiters)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/public/jobs', methods=['GET'])
+@token_required
+def get_public_jobs(current_user):
+    """Get all jobs from all users"""
+    try:
+        jobs = list(jobs_collection.find({}))
+        for job in jobs:
+            job['_id'] = str(job['_id'])
+            job['id'] = str(job['_id'])
+        return jsonify(jobs)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/public/submissions', methods=['GET'])
+@token_required
+def get_public_submissions(current_user):
+    """Get all submissions from all users"""
+    try:
+        submissions = list(submissions_collection.find({}))
+        for submission in submissions:
+            submission['_id'] = str(submission['_id'])
+            submission['id'] = str(submission['_id'])
+            # Remove sensitive data
+            if 'file_data' in submission:
+                del submission['file_data']
+            if 'resume_data' in submission:
+                del submission['resume_data']
+            if 'text_content' in submission:
+                del submission['text_content']
+        return jsonify(submissions)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/public/resumes', methods=['GET'])
+@token_required
+def get_public_resumes(current_user):
+    """Get all resumes from all users"""
+    try:
+        resumes = list(resumes_collection.find({}))
+        for resume in resumes:
+            resume['_id'] = str(resume['_id'])
+            resume['id'] = str(resume['_id'])
+            # Remove sensitive data
+            if 'file_data' in resume:
+                del resume['file_data']
+            if 'text_content' in resume:
+                del resume['text_content']
+        return jsonify(resumes)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def allowed_file(filename):
+    """Check if the file extension is allowed"""
+    ALLOWED_EXTENSIONS = {'pdf', 'docx', 'doc'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/api/process-and-store-resume', methods=['POST', 'OPTIONS'])
+def process_and_store_resume():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+
+    try:
+        # print("Received request to process resume")  # Comment out debug print
+        
+        # Check if resume file is present
+        if 'resume' not in request.files:
+            # print("No resume file in request")  # Comment out debug print
+            return jsonify({'error': 'No resume file provided'}), 400
+
+        resume_file = request.files['resume']
+        if resume_file.filename == '':
+            # print("Empty filename")  # Comment out debug print
+            return jsonify({'error': 'No selected file'}), 400
+
+        # print(f"Processing file: {resume_file.filename}")  # Comment out debug print
+
+        # Validate file type
+        if not allowed_file(resume_file.filename):
+            # print(f"Invalid file type: {resume_file.filename}")  # Comment out debug print
+            return jsonify({'error': 'Invalid file type. Please upload a PDF or DOCX file'}), 400
+
+        try:
+            # Extract text from resume
+            text_content = extract_text_from_file(resume_file)
+            if not text_content:
+                # print("Could not extract text from resume")  # Comment out debug print
+                return jsonify({'error': 'Could not extract text from resume'}), 400
+        except Exception as e:
+            # print(f"Text extraction error: {str(e)}")  # Comment out debug print
+            return jsonify({'error': f'Failed to extract text from resume: {str(e)}'}), 400
+
+        try:
+            # Extract information using enhanced extraction
+            resume_data = extract_resume_info(text_content)
+            if not resume_data.get('email'):
+                # print("Could not extract email from resume")  # Comment out debug print
+                return jsonify({'error': 'Could not extract email from resume'}), 400
+        except Exception as e:
+            # print(f"Info extraction error: {str(e)}")  # Comment out debug print
+            return jsonify({'error': f'Failed to extract information from resume: {str(e)}'}), 400
+
+        try:
+            # Convert file to base64 for storage
+            resume_file.seek(0)
+            file_data = base64.b64encode(resume_file.read()).decode('utf-8')
+        except Exception as e:
+            # print(f"File conversion error: {str(e)}")  # Comment out debug print
+            return jsonify({'error': f'Failed to process resume file: {str(e)}'}), 400
+
+        try:
+            # Check if resume with this email already exists
+            existing_resume = resumes_collection.find_one({'email': resume_data['email']}) if resume_data.get('email') else None
+            
+            # Prepare document for MongoDB - store data at root level
+            resume_doc = {
+                'file_name': secure_filename(resume_file.filename),
+                'file_data': file_data,
+                'text_content': text_content,
+                'name': resume_data.get('name', ''),
+                'email': resume_data.get('email', ''),
+                'phone_number': resume_data.get('phone_number', ''),
+                'linkedin': resume_data.get('linkedin', ''),
+                'job_title': resume_data.get('job_title', ''),
+                'location': resume_data.get('location', ''),
+                'current_role': resume_data.get('current_role', ''),
+                'current_company': resume_data.get('current_company', ''),
+                'total_experience': resume_data.get('total_experience', ''),
+                'skills': resume_data.get('skills', ''),
+                'education': resume_data.get('education', ''),
+                'visa': resume_data.get('visa', ''),
+                'resume_summary': resume_data.get('professional_profile', ''),
+                'experience': resume_data.get('experience_details', []),
+                'category': resume_data.get('category', ''),
+                'updated_at': datetime.utcnow()
+            }
+
+            # If email exists, update the existing document, otherwise insert new
+            if existing_resume and resume_data.get('email'):
+                # Keep existing values if new values are empty
+                for key in resume_doc:
+                    if key not in ['file_name', 'file_data', 'text_content', 'updated_at'] and not resume_doc[key]:
+                        resume_doc[key] = existing_resume.get(key, '')
+                
+                # Update existing resume
+                result = resumes_collection.update_one(
+                    {'email': resume_data['email']},
+                    {'$set': resume_doc}
+                )
+                resume_id = str(existing_resume['_id'])
+                # print(f"Updated existing resume for email: {resume_data['email']}")  # Comment out debug print
+            else:
+                # Insert new resume
+                resume_doc['created_at'] = datetime.utcnow()
+                result = resumes_collection.insert_one(resume_doc)
+                resume_id = str(result.inserted_id)
+                # print(f"Inserted new resume with ID: {resume_id}")  # Comment out debug print
+
+            # Return the processed information
+            return jsonify({
+                'resume_id': resume_id,
+                'name': resume_doc['name'],
+                'email': resume_doc['email'],
+                'phone_number': resume_doc['phone_number'],
+                'location': resume_doc['location'],
+                'job_title': resume_doc['job_title'],
+                'current_role': resume_doc['current_role'],
+                'current_company': resume_doc['current_company'],
+                'total_experience': resume_doc['total_experience'],
+                'education': resume_doc['education'],
+                'resume_summary': resume_doc['resume_summary'],
+                'skills': resume_doc['skills'],
+                'experience_details': resume_doc['experience'],
+                'visa': resume_doc['visa'],
+                'linkedin': resume_doc['linkedin']
+            })
+        except Exception as e:
+            # print(f"Database error: {str(e)}")  # Comment out debug print
+            return jsonify({'error': f'Failed to store resume in database: {str(e)}'}), 500
+
+    except Exception as e:
+        # print(f"Unexpected error processing resume: {str(e)}")  # Comment out debug print
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+@app.route('/api/extract-skills', methods=['POST'])
+@token_required
+def extract_skills(current_user):
+    """Extract skills from job description"""
+    try:
+        data = request.get_json()
+        if not data or 'job_description' not in data:
+            return jsonify({'error': 'Job description is required'}), 400
+        
+        job_description = data['job_description']
+        skills = extract_skills_gemini(job_description)
+        
+        return jsonify({
+            'skills': skills,
+            'message': f'Successfully extracted {len(skills)} skills'
+        })
+        
+    except Exception as e:
+        print(f"Error in extract_skills: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 # =============================================
 # Application Entry Point
 # =============================================
 if __name__ == '__main__':
-    #serve(app, host='0.0.0.0', port=5000, threads=4)
-    app.run(debug=True, port=5000) 
+    app.run(debug=True, port=5000)

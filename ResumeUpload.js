@@ -556,13 +556,8 @@ const ResumeUpload = () => {
 
     const query = searchTerm.toLowerCase();
     const filtered = sourceData.filter(resume => {
-      return (
-        (resume.name && resume.name.toLowerCase().includes(query)) ||
-        (resume.email && resume.email.toLowerCase().includes(query)) ||
-        (resume.skills && resume.skills.toLowerCase().includes(query)) ||
-        (resume.job_title && resume.job_title.toLowerCase().includes(query)) ||
-        (resume.location && resume.location.toLowerCase().includes(query))
-      );
+      // Only filter by job title
+      return resume.job_title && resume.job_title.toLowerCase().includes(query);
     });
     setFilteredResumes(filtered);
   };
@@ -1224,11 +1219,12 @@ const ResumeUpload = () => {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                <StyledTableCell sx={{ width: '15%' }}>Name</StyledTableCell>
-                <StyledTableCell sx={{ width: '20%' }}>Email</StyledTableCell>
+                <StyledTableCell sx={{ width: '12%' }}>Name</StyledTableCell>
+                <StyledTableCell sx={{ width: '15%' }}>Email</StyledTableCell>
+                <StyledTableCell sx={{ width: '12%' }}>Phone</StyledTableCell>
                 <StyledTableCell sx={{ width: '15%' }}>Job Title</StyledTableCell>
-                <StyledTableCell sx={{ width: '15%' }}>Location</StyledTableCell>
-                <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>Skills</StyledTableCell>
+                <StyledTableCell sx={{ width: '12%' }}>Location</StyledTableCell>
+                <StyledTableCell sx={{ width: '24%', padding: '8px 16px' }}>Skills</StyledTableCell>
                 <StyledTableCell align="right" sx={{ width: '10%' }}>Actions</StyledTableCell>
               </TableRow>
             </TableHead>
@@ -1238,7 +1234,7 @@ const ResumeUpload = () => {
                   key={resume._id}
                   hover
                 >
-                  <StyledTableCell sx={{ width: '15%' }}>
+                  <StyledTableCell sx={{ width: '12%' }}>
                     <Typography 
                       className="cell-content" 
                       onClick={() => handleView(resume)}
@@ -1246,12 +1242,20 @@ const ResumeUpload = () => {
                       {resume.name || 'N/A'}
                     </Typography>
                   </StyledTableCell>
-                  <StyledTableCell sx={{ width: '20%' }}>
+                  <StyledTableCell sx={{ width: '15%' }}>
                     <Typography 
                       className="cell-content"
                       onClick={() => handleView(resume)}
                     >
                       {resume.email || 'N/A'}
+                    </Typography>
+                  </StyledTableCell>
+                  <StyledTableCell sx={{ width: '12%' }}>
+                    <Typography 
+                      className="cell-content"
+                      onClick={() => handleView(resume)}
+                    >
+                      {resume.phone_number || 'N/A'}
                     </Typography>
                   </StyledTableCell>
                   <StyledTableCell sx={{ width: '15%' }}>
@@ -1262,7 +1266,7 @@ const ResumeUpload = () => {
                       {resume.job_title || 'N/A'}
                     </Typography>
                   </StyledTableCell>
-                  <StyledTableCell sx={{ width: '15%' }}>
+                  <StyledTableCell sx={{ width: '12%' }}>
                     <Typography 
                       className="cell-content"
                       onClick={() => handleView(resume)}
@@ -1270,7 +1274,7 @@ const ResumeUpload = () => {
                       {resume.location || 'N/A'}
                     </Typography>
                   </StyledTableCell>
-                  <StyledTableCell sx={{ width: '25%', padding: '8px 16px' }}>
+                  <StyledTableCell sx={{ width: '24%', padding: '8px 16px' }}>
                     <StyledSkillsContainer>
                       {renderSkills(resume.skills)}
                     </StyledSkillsContainer>
@@ -1328,7 +1332,7 @@ const ResumeUpload = () => {
               ))}
               {filteredResumes.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                  <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
                     <Box sx={{ 
                       display: 'flex', 
                       flexDirection: 'column', 

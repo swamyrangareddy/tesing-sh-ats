@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Grid,
@@ -14,6 +15,12 @@ import {
   CircularProgress,
   Paper,
   useTheme,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -23,6 +30,9 @@ import {
   LocationOn as LocationIcon,
   Business as BusinessIcon,
   CalendarToday as CalendarIcon,
+  Public as PublicIcon,
+  Group as GroupIcon,
+  Description as DescriptionIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
@@ -167,16 +177,19 @@ const StyledStatusChip = styled(Chip)(({ theme, status }) => {
 
 const Dashboard = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalRecruiters: 0,
     totalJobs: 0,
     totalSubmissions: 0,
     totalResumes: 0,
-    totalpublicApplications: 0,
+    totalPublicApplications: 0,
   });
   const [recentJobs, setRecentJobs] = useState([]);
   const [recentSubmissions, setRecentSubmissions] = useState([]);
   const [resumes, setResumes] = useState([]);
+  const [jobSubmissions, setJobSubmissions] = useState([]);
+  const [publicApplications, setPublicApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -189,24 +202,48 @@ const Dashboard = () => {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      const [recruitersResponse, jobsResponse, submissionsResponse, resumesResponse] = await Promise.all([
+      console.log('=== Debug: fetchStats ===');
+      
+      const [recruitersResponse, jobsResponse, submissionsResponse, resumesResponse, publicApplicationsResponse] = await Promise.all([
         getRecruiters(),
         getJobs(),
         getSubmissions(),
-        getResumes()
+        getResumes(),
+        getPublicApplications()
       ]);
+
+      console.log('Raw API responses:', {
+        recruiters: recruitersResponse,
+        jobs: jobsResponse,
+        submissions: submissionsResponse,
+        resumes: resumesResponse,
+        publicApplications: publicApplicationsResponse
+      });
 
       // Extract data from responses, handling different response formats
       const recruiters = recruitersResponse.data || recruitersResponse || [];
       const jobs = jobsResponse.data || jobsResponse || [];
       const submissions = submissionsResponse.data || submissionsResponse || [];
       const resumes = resumesResponse.data?.resumes || resumesResponse?.resumes || resumesResponse || [];
+      const publicApps = publicApplicationsResponse?.data || publicApplicationsResponse || [];
+
+      console.log('Processed data counts:', {
+        recruiters: recruiters.length,
+        jobs: jobs.length,
+        submissions: submissions.length,
+        resumes: resumes.length,
+        publicApplications: publicApps.length
+      });
+
+      // Debug: Print public applications data
+      console.log('Public Applications:', publicApps);
 
       setStats({
         totalRecruiters: recruiters.length,
         totalJobs: jobs.length,
         totalSubmissions: submissions.length,
         totalResumes: resumes.length,
+        totalPublicApplications: publicApps.length,
       });
     } catch (err) {
       console.error('Error fetching stats:', err);
@@ -219,14 +256,40 @@ const Dashboard = () => {
   const fetchRecentActivities = async () => {
     try {
       setLoading(true);
-      const [jobsResponse, submissionsResponse] = await Promise.all([
+      console.log('Fetching recent activities...');
+      
+      const [jobsResponse, submissionsResponse, publicApplicationsResponse] = await Promise.all([
         getJobs(),
-        getSubmissions()
+        getSubmissions(),
+        getPublicApplications()
       ]);
+
+      console.log('Raw API responses:', {
+        jobs: jobsResponse,
+        submissions: submissionsResponse,
+        publicApplications: publicApplicationsResponse
+      });
 
       // Extract data from responses, handling different response formats
       const jobs = jobsResponse.data || jobsResponse || [];
       const submissions = submissionsResponse.data || submissionsResponse || [];
+      const publicApps = publicApplicationsResponse?.data || publicApplicationsResponse || [];
+
+      console.log('Processed data:', {
+        jobs: jobs.length + ' jobs',
+        submissions: submissions.length + ' submissions',
+        publicApps: publicApps.length + ' public applications'
+      });
+
+      // Debug: Print job IDs
+      jobs.forEach(job => {
+        console.log(`Job: ${job.title}, ID: ${job._id}, type: ${typeof job._id}`);
+      });
+
+      // Debug: Print public application job IDs
+      publicApps.forEach(app => {
+        console.log(`Public App for job: ${app.job_id}, type: ${typeof app.job_id}`);
+      });
 
       // Sort jobs by created_at in descending order and take latest 5
       const sortedJobs = jobs
@@ -244,24 +307,64 @@ const Dashboard = () => {
           ]
         }));
 
-      // Sort submissions by created_at in descending order and take latest 5
-      const sortedSubmissions = submissions
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 5)
-        .map(submission => ({
-          ...submission,
-          title: submission.candidate_name,
-          subtitle: jobs.find(j => j.id === submission.job_id)?.title || 'Unknown Job',
-          icon: <AssignmentIcon />,
-          status: submission.status,
-          metadata: [
-            { icon: <BusinessIcon />, text: submission.candidate_city || 'N/A' },
-            { icon: <CalendarIcon />, text: new Date(submission.created_at).toLocaleDateString() }
-          ]
-        }));
+      // Calculate submissions and public applications per job
+      const submissionsPerJob = jobs.map(job => {
+        const jobId = typeof job._id === 'string' ? job._id : job._id.$oid || String(job._id);
+        
+        // Match submissions by job_id
+        const jobSubmissions = submissions.filter(sub => {
+          const subJobId = typeof sub.job_id === 'string' ? sub.job_id : sub.job_id.$oid || String(sub.job_id);
+          return subJobId === jobId;
+        });
+        
+        // Match public applications by job_id
+        const jobPublicApplications = publicApps.filter(app => {
+          const appJobId = typeof app.job_id === 'string' ? app.job_id : app.job_id.$oid || String(app.job_id);
+          console.log(`Comparing job._id: ${jobId} with app.job_id: ${appJobId}, match: ${appJobId === jobId}`);
+          return appJobId === jobId;
+        });
+        
+        const publicCount = jobPublicApplications.length;
+        console.log(`Job "${job.title}" (ID: ${jobId}):`, {
+          submissions: jobSubmissions.length,
+          publicApplications: publicCount,
+          publicAppsDetails: jobPublicApplications
+        });
+
+        return {
+          id: jobId,
+          title: job.title,
+          client: job.client,
+          status: job.status || 'open',
+          submissionCount: jobSubmissions.length,
+          publicApplicationsCount: publicCount,
+          location: job.location || 'N/A',
+        };
+      });
+
+      setStats(prevStats => ({
+        ...prevStats,
+        totalJobs: jobs.length,
+        totalSubmissions: submissions.length,
+        totalPublicApplications: publicApps.length
+      }));
+
+      console.log('Submissions per job:', submissionsPerJob);
 
       setRecentJobs(sortedJobs);
-      setRecentSubmissions(sortedSubmissions);
+      setRecentSubmissions(submissions.slice(0, 5).map(submission => ({
+        ...submission,
+        title: submission.candidate_name,
+        subtitle: jobs.find(j => j._id === submission.job_id)?.title || 'Unknown Job',
+        icon: <AssignmentIcon />,
+        status: submission.status,
+        metadata: [
+          { icon: <BusinessIcon />, text: submission.candidate_city || 'N/A' },
+          { icon: <CalendarIcon />, text: new Date(submission.created_at).toLocaleDateString() }
+        ]
+      })));
+      setJobSubmissions(submissionsPerJob);
+      setPublicApplications(publicApps);
     } catch (err) {
       console.error('Error fetching recent activities:', err);
       setError('Failed to load recent activities');
@@ -296,77 +399,62 @@ const Dashboard = () => {
     );
   }
 
+  const statsCardsData = [
+    {
+      title: 'Total Recruiters',
+      value: stats.totalRecruiters || 0,
+      icon: <GroupIcon sx={{ fontSize: 40, opacity: 0.9 }} />,
+      color: '#4CAF50'
+    },
+    {
+      title: 'Total Jobs',
+      value: stats.totalJobs || 0,
+      icon: <WorkIcon sx={{ fontSize: 40, opacity: 0.9 }} />,
+      color: '#2196F3'
+    },
+    {
+      title: 'Total Submissions',
+      value: stats.totalSubmissions || 0,
+      icon: <AssignmentIcon sx={{ fontSize: 40, opacity: 0.9 }} />,
+      color: '#FF9800'
+    },
+    {
+      title: 'Total Resumes',
+      value: stats.totalResumes || 0,
+      icon: <DescriptionIcon sx={{ fontSize: 40, opacity: 0.9 }} />,
+      color: '#9C27B0'
+    },
+    {
+      title: 'Public Applications',
+      value: stats.totalPublicApplications || 0,
+      icon: <PublicIcon sx={{ fontSize: 40, opacity: 0.9 }} />,
+      color: '#00BCD4'
+    }
+  ];
+
   return (
     <StyledContainer>
       <Grid container spacing={3}>
-        <Grid item xs={12} sm={6} md={3}>
-          <GradientCard
-            color="#2196f3"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <PeopleIcon sx={{ fontSize: 40, mr: 2, opacity: 0.9 }} />
-              <Typography variant="h6" sx={{ fontWeight: 500 }}>Recruiters</Typography>
-            </Box>
-            <Typography variant="h3" sx={{ fontWeight: 600 }}>
-              {stats.totalRecruiters}
-            </Typography>
-          </GradientCard>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <GradientCard
-            color="#4caf50"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <WorkIcon sx={{ fontSize: 40, mr: 2, opacity: 0.9 }} />
-              <Typography variant="h6" sx={{ fontWeight: 500 }}>Active Jobs</Typography>
-            </Box>
-            <Typography variant="h3" sx={{ fontWeight: 600 }}>
-              {stats.totalJobs}
-            </Typography>
-          </GradientCard>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <GradientCard
-            color="#ff9800"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.2 }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <AssignmentIcon sx={{ fontSize: 40, mr: 2, opacity: 0.9 }} />
-              <Typography variant="h6" sx={{ fontWeight: 500 }}>Submissions</Typography>
-            </Box>
-            <Typography variant="h3" sx={{ fontWeight: 600 }}>
-              {stats.totalSubmissions}
-            </Typography>
-          </GradientCard>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <GradientCard
-            color="#9c27b0"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.3 }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <UploadIcon sx={{ fontSize: 40, mr: 2, opacity: 0.9 }} />
-              <Typography variant="h6" sx={{ fontWeight: 500 }}>Resumes</Typography>
-            </Box>
-            <Typography variant="h3" sx={{ fontWeight: 600 }}>
-              {stats.totalResumes}
-            </Typography>
-          </GradientCard>
-        </Grid>
-
+        {statsCardsData.map((card, index) => (
+          <Grid item xs={12} sm={6} md={2.4} key={index}>
+            <GradientCard
+              color={card.color}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.1 }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                {card.icon}
+                <Typography variant="h6" sx={{ fontWeight: 500, ml: 2 }}>
+                  {card.title}
+                </Typography>
+              </Box>
+              <Typography variant="h3" sx={{ fontWeight: 600 }}>
+                {card.value}
+              </Typography>
+            </GradientCard>
+          </Grid>
+        ))}
         <Grid item xs={12} md={6}>
           <ActivityContainer
             initial={{ opacity: 0, y: 20 }}
@@ -402,6 +490,8 @@ const Dashboard = () => {
                       label={job.status} 
                       status={job.status}
                       size="small"
+                      onClick={() => navigate(`/jobs?id=${job.id}`)}
+                      sx={{ cursor: 'pointer' }}
                     />
                   </ListItem>
                 ))}
@@ -453,7 +543,70 @@ const Dashboard = () => {
           </ActivityContainer>
         </Grid>
 
-        
+        <Grid item xs={12}>
+          <ActivityContainer
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.4 }}
+          >
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333' }}>
+              Job Submissions Overview
+            </Typography>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Job Title</TableCell>
+                    <TableCell>Client</TableCell>
+                    <TableCell>Location</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Submissions</TableCell>
+                    <TableCell align="right">Public Applications</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {jobSubmissions.map((job) => (
+                    <TableRow
+                      key={job.id}
+                      sx={{
+                        '&:hover': {
+                          backgroundColor: 'rgba(0, 0, 0, 0.03)',
+                        },
+                      }}
+                    >
+                      <TableCell>{job.title}</TableCell>
+                      <TableCell>{job.client}</TableCell>
+                      <TableCell>{job.location}</TableCell>
+                      <TableCell>
+                        <StyledStatusChip
+                          label={job.status}
+                          status={job.status}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Chip
+                          label={job.submissionCount}
+                          color={job.submissionCount > 0 ? "primary" : "default"}
+                          size="small"
+                          sx={{ minWidth: '60px' }}
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Chip
+                          label={job.publicApplicationsCount}
+                          color={job.publicApplicationsCount > 0 ? "secondary" : "default"}
+                          size="small"
+                          sx={{ minWidth: '60px' }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </ActivityContainer>
+        </Grid>
       </Grid>
 
       <Snackbar
