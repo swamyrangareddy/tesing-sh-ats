@@ -12,6 +12,9 @@ import {
   useTheme,
   useMediaQuery,
   Paper,
+  TextField,
+  IconButton,
+  Link,
 } from '@mui/material';
 import {
   Work as WorkIcon,
@@ -26,6 +29,13 @@ import {
   Timeline,
   Speed,
   Security,
+  Email as EmailIcon,
+  Phone as PhoneIcon,
+  LocationOn as LocationIcon,
+  LinkedIn as LinkedInIcon,
+  Twitter as TwitterIcon,
+  Facebook as FacebookIcon,
+  Send as SendIcon,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { Link as RouterLink } from 'react-router-dom';
@@ -37,7 +47,7 @@ import animationData3 from '../assets/animations/Animation - 1743158522363.json'
 
 const HeroSection = styled(Box)(({ theme }) => ({
   background: 'linear-gradient(135deg, #1976d2 0%, #1565c0 90%)',
-  minHeight: '100vh',
+  minHeight: '80vh',
   display: 'flex',
   alignItems: 'center',
   position: 'relative',
@@ -48,7 +58,6 @@ const HeroSection = styled(Box)(({ theme }) => ({
     left: 0,
     right: 0,
     bottom: 0,
-
     opacity: 0.1,
   },
 }));
@@ -248,24 +257,6 @@ const Home = () => {
       color: '#4caf50',
     },
     {
-      icon: <Search />,
-      title: 'Intelligent Search',
-      description: 'Powerful search capabilities to find the right candidates based on skills, experience, and qualifications.',
-      color: '#9c27b0',
-    },
-    {
-      icon: <Assessment />,
-      title: 'ATS Scoring',
-      description: 'Automated scoring system to evaluate resumes against job requirements and identify the best matches.',
-      color: '#ff9800',
-    },
-    {
-      icon: <Group />,
-      title: 'Team Collaboration',
-      description: 'Streamlined collaboration tools for recruiters and hiring managers to work together efficiently.',
-      color: '#f44336',
-    },
-    {
       icon: <Security />,
       title: 'Secure & Compliant',
       description: 'Enterprise-grade security and compliance features to protect sensitive candidate data.',
@@ -351,34 +342,39 @@ const Home = () => {
                     letterSpacing: '-1px'
                   }}
                 >
-                  Transform Your Hiring Process
+                  ATS System
                 </Typography>
                 <Typography
-                  variant={isMobile ? 'h6' : 'h4'}
+                  variant={isMobile ? 'h6' : 'h5'}
                   sx={{ 
-                    mb: 6, 
+                    mb: 4, 
                     maxWidth: '800px', 
                     mx: 'auto',
                     textShadow: '1px 1px 2px rgba(0,0,0,0.3)',
                     color: 'white',
-                    fontWeight: 200,
-                    fontSize: '1.8rem',
+                    fontWeight: 400,
+                    lineHeight: 1.5
                   }}
                 >
-                  Our advanced Applicant Tracking System combines AI technology with intuitive design to streamline your recruitment workflow.
+                  Our advanced Applicant Tracking System helps you manage candidates, track applications, and streamline your hiring process.
                 </Typography>
-                <HeroButton
-                  component={RouterLink}
-                  to="/signup"
-                  variant="contained"
-                  size="large"
-                  sx={{
-                    backgroundColor: theme.palette.primary.main,
-                    color: 'white',
-                  }}
-                >
-                  Get Started
-                </HeroButton>
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                  <HeroButton
+                    component={RouterLink}
+                    to="/signup"
+                    variant="contained"
+                    size="large"
+                    sx={{
+                      backgroundColor: theme.palette.primary.light,
+                      color: 'white',
+                      '&:hover': {
+                        backgroundColor: theme.palette.primary.main,
+                      }
+                    }}
+                  >
+                    Get Started
+                  </HeroButton>
+                </Box>
               </motion.div>
             </Grid>
           </Grid>
@@ -462,9 +458,9 @@ const Home = () => {
               animationData={animationData3} 
               style={{ width: '300px', margin: '0 auto', marginBottom: '20px' }} 
             />
-            <Grid container spacing={4}>
+            <Grid container spacing={4} justifyContent="center">
               {atsFeatures.map((feature, index) => (
-                <Grid item xs={12} md={4} key={index}>
+                <Grid item xs={12} sm={6} md={4} key={index}>
                   <FeatureCard
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -552,69 +548,6 @@ const Home = () => {
         </motion.div>
       </Container>
 
-      <Container sx={{ py: 8 }}>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8 }}
-        >
-          <Typography
-            variant="h3"
-            component="h2"
-            align="center"
-            gutterBottom
-            sx={{ 
-              mb: 6,
-              fontWeight: 800,
-              background: 'linear-gradient(135deg, #1E293B 0%, #334155 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.02em',
-            }}
-          >
-            Why Choose Our ATS?
-          </Typography>
-          <Grid container spacing={4}>
-            {[
-              {
-                icon: <Speed />,
-                title: 'Fast & Efficient',
-                description: 'Reduce time-to-hire by up to 50% with our streamlined processes',
-              },
-              {
-                icon: <Analytics />,
-                title: 'Data-Driven Decisions',
-                description: 'Make informed hiring decisions based on comprehensive analytics',
-              },
-              {
-                icon: <Security />,
-                title: 'Enterprise Security',
-                description: 'Bank-grade security to protect your sensitive recruitment data',
-              },
-            ].map((item, index) => (
-              <Grid item xs={12} md={4} key={index}>
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                >
-                  <Card sx={{ height: '100%', textAlign: 'center', p: 3 }}>
-                    <IconWrapper>
-                      {item.icon}
-                    </IconWrapper>
-                    <Typography variant="h6" gutterBottom>
-                      {item.title}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {item.description}
-                    </Typography>
-                  </Card>
-                </motion.div>
-              </Grid>
-            ))}
-          </Grid>
-        </motion.div>
-      </Container>
     </Box>
   );
 };

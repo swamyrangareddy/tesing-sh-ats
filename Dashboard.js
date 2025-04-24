@@ -36,6 +36,7 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import NoData from '../components/NoData';
 import { getRecruiters, getJobs, getSubmissions, getResumes, getPublicApplications } from '../services/api';
 
@@ -190,6 +191,7 @@ const Dashboard = () => {
   const [resumes, setResumes] = useState([]);
   const [jobSubmissions, setJobSubmissions] = useState([]);
   const [publicApplications, setPublicApplications] = useState([]);
+  const [submissionsChartData, setSubmissionsChartData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -202,7 +204,6 @@ const Dashboard = () => {
   const fetchStats = async () => {
     try {
       setLoading(true);
-      console.log('=== Debug: fetchStats ===');
       
       const [recruitersResponse, jobsResponse, submissionsResponse, resumesResponse, publicApplicationsResponse] = await Promise.all([
         getRecruiters(),
@@ -212,14 +213,6 @@ const Dashboard = () => {
         getPublicApplications()
       ]);
 
-      console.log('Raw API responses:', {
-        recruiters: recruitersResponse,
-        jobs: jobsResponse,
-        submissions: submissionsResponse,
-        resumes: resumesResponse,
-        publicApplications: publicApplicationsResponse
-      });
-
       // Extract data from responses, handling different response formats
       const recruiters = recruitersResponse.data || recruitersResponse || [];
       const jobs = jobsResponse.data || jobsResponse || [];
@@ -227,22 +220,20 @@ const Dashboard = () => {
       const resumes = resumesResponse.data?.resumes || resumesResponse?.resumes || resumesResponse || [];
       const publicApps = publicApplicationsResponse?.data || publicApplicationsResponse || [];
 
-      console.log('Processed data counts:', {
-        recruiters: recruiters.length,
-        jobs: jobs.length,
-        submissions: submissions.length,
-        resumes: resumes.length,
-        publicApplications: publicApps.length
-      });
-
-      // Debug: Print public applications data
-      console.log('Public Applications:', publicApps);
+      // Filter out empty resume objects
+      const validResumes = Array.isArray(resumes) 
+        ? resumes.filter(resume => {
+            return resume && 
+                   Object.keys(resume).length > 0 && 
+                   (resume.name || resume.filename || resume.email);
+          })
+        : [];
 
       setStats({
         totalRecruiters: recruiters.length,
         totalJobs: jobs.length,
         totalSubmissions: submissions.length,
-        totalResumes: resumes.length,
+        totalResumes: validResumes.length,
         totalPublicApplications: publicApps.length,
       });
     } catch (err) {
@@ -256,7 +247,6 @@ const Dashboard = () => {
   const fetchRecentActivities = async () => {
     try {
       setLoading(true);
-      console.log('Fetching recent activities...');
       
       const [jobsResponse, submissionsResponse, publicApplicationsResponse] = await Promise.all([
         getJobs(),
@@ -264,32 +254,46 @@ const Dashboard = () => {
         getPublicApplications()
       ]);
 
-      console.log('Raw API responses:', {
-        jobs: jobsResponse,
-        submissions: submissionsResponse,
-        publicApplications: publicApplicationsResponse
-      });
-
       // Extract data from responses, handling different response formats
       const jobs = jobsResponse.data || jobsResponse || [];
       const submissions = submissionsResponse.data || submissionsResponse || [];
       const publicApps = publicApplicationsResponse?.data || publicApplicationsResponse || [];
 
-      console.log('Processed data:', {
-        jobs: jobs.length + ' jobs',
-        submissions: submissions.length + ' submissions',
-        publicApps: publicApps.length + ' public applications'
-      });
+      // Calculate submissions and public applications per job
+      const submissionsPerJob = jobs.map(job => {
+        const jobId = typeof job._id === 'string' ? job._id : job._id.$oid || String(job._id);
+        
+        // Match submissions by job_id
+        const jobSubmissions = submissions.filter(sub => {
+          const subJobId = typeof sub.job_id === 'string' ? sub.job_id : sub.job_id.$oid || String(sub.job_id);
+          return subJobId === jobId;
+        });
+        
+        // Match public applications by job_id
+        const jobPublicApplications = publicApps.filter(app => {
+          const appJobId = typeof app.job_id === 'string' ? app.job_id : app.job_id.$oid || String(app.job_id);
+          
+          return appJobId === jobId;
+        });
+        
+        const publicCount = jobPublicApplications.length;
 
-      // Debug: Print job IDs
-      jobs.forEach(job => {
-        console.log(`Job: ${job.title}, ID: ${job._id}, type: ${typeof job._id}`);
+        return {
+          id: jobId,
+          title: job.title,
+          client: job.client,
+          status: job.status || 'open',
+          submissionCount: jobSubmissions.length,
+          publicApplicationsCount: publicCount,
+          location: job.location || 'N/A',
+          created_at: job.created_at || new Date().toISOString(),
+        };
       });
-
-      // Debug: Print public application job IDs
-      publicApps.forEach(app => {
-        console.log(`Public App for job: ${app.job_id}, type: ${typeof app.job_id}`);
-      });
+      
+      // Sort submissions by date (newest first)
+      const sortedSubmissionsPerJob = [...submissionsPerJob].sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
 
       // Sort jobs by created_at in descending order and take latest 5
       const sortedJobs = jobs
@@ -307,55 +311,15 @@ const Dashboard = () => {
           ]
         }));
 
-      // Calculate submissions and public applications per job
-      const submissionsPerJob = jobs.map(job => {
-        const jobId = typeof job._id === 'string' ? job._id : job._id.$oid || String(job._id);
-        
-        // Match submissions by job_id
-        const jobSubmissions = submissions.filter(sub => {
-          const subJobId = typeof sub.job_id === 'string' ? sub.job_id : sub.job_id.$oid || String(sub.job_id);
-          return subJobId === jobId;
-        });
-        
-        // Match public applications by job_id
-        const jobPublicApplications = publicApps.filter(app => {
-          const appJobId = typeof app.job_id === 'string' ? app.job_id : app.job_id.$oid || String(app.job_id);
-          console.log(`Comparing job._id: ${jobId} with app.job_id: ${appJobId}, match: ${appJobId === jobId}`);
-          return appJobId === jobId;
-        });
-        
-        const publicCount = jobPublicApplications.length;
-        console.log(`Job "${job.title}" (ID: ${jobId}):`, {
-          submissions: jobSubmissions.length,
-          publicApplications: publicCount,
-          publicAppsDetails: jobPublicApplications
-        });
-
-        return {
-          id: jobId,
-          title: job.title,
-          client: job.client,
-          status: job.status || 'open',
-          submissionCount: jobSubmissions.length,
-          publicApplicationsCount: publicCount,
-          location: job.location || 'N/A',
-        };
-      });
-
-      setStats(prevStats => ({
-        ...prevStats,
-        totalJobs: jobs.length,
-        totalSubmissions: submissions.length,
-        totalPublicApplications: publicApps.length
-      }));
-
-      console.log('Submissions per job:', submissionsPerJob);
-
       setRecentJobs(sortedJobs);
       setRecentSubmissions(submissions.slice(0, 5).map(submission => ({
         ...submission,
         title: submission.candidate_name,
-        subtitle: jobs.find(j => j._id === submission.job_id)?.title || 'Unknown Job',
+        subtitle: jobs.find(j => {
+          const jobId = typeof j._id === 'string' ? j._id : j._id.$oid || String(j._id);
+          const subJobId = typeof submission.job_id === 'string' ? submission.job_id : submission.job_id.$oid || String(submission.job_id);
+          return jobId === subJobId;
+        })?.title || 'Unknown Job',
         icon: <AssignmentIcon />,
         status: submission.status,
         metadata: [
@@ -363,8 +327,41 @@ const Dashboard = () => {
           { icon: <CalendarIcon />, text: new Date(submission.created_at).toLocaleDateString() }
         ]
       })));
-      setJobSubmissions(submissionsPerJob);
+      setJobSubmissions(sortedSubmissionsPerJob);
       setPublicApplications(publicApps);
+      
+      // Prepare data for the last 5 days submissions chart
+      const today = new Date();
+      const last5Days = Array.from({ length: 5 }, (_, i) => {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        return date;
+      }).reverse();
+      
+      const chartData = last5Days.map(date => {
+        const dateString = date.toISOString().split('T')[0];
+        const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        
+        // Count submissions for this date
+        const daySubmissions = submissions.filter(sub => {
+          const subDate = new Date(sub.created_at).toISOString().split('T')[0];
+          return subDate === dateString;
+        }).length;
+        
+        // Count public applications for this date
+        const dayPublicApps = publicApps.filter(app => {
+          const appDate = new Date(app.created_at).toISOString().split('T')[0];
+          return appDate === dateString;
+        }).length;
+        
+        return {
+          date: formattedDate,
+          submissions: daySubmissions,
+          publicApplications: dayPublicApps
+        };
+      });
+      
+      setSubmissionsChartData(chartData);
     } catch (err) {
       console.error('Error fetching recent activities:', err);
       setError('Failed to load recent activities');
@@ -378,11 +375,24 @@ const Dashboard = () => {
       setLoading(true);
       const resumesResponse = await getResumes();
       
-      // Extract resumes data from the response, handling different response formats
+      // Extract resumes data and filter out empty objects
       const resumesData = resumesResponse.data?.resumes || resumesResponse?.resumes || resumesResponse || [];
+      const validResumes = Array.isArray(resumesData) 
+        ? resumesData.filter(resume => {
+            // Only keep resumes that have actual data
+            return resume && 
+                   Object.keys(resume).length > 0 && 
+                   (resume.name || resume.filename || resume.email);
+          })
+        : [];
+
+      setResumes(validResumes);
       
-      console.log('Fetched resumes:', resumesData);
-      setResumes(Array.isArray(resumesData) ? resumesData : []);
+      // Update total resumes count in stats
+      setStats(prevStats => ({
+        ...prevStats,
+        totalResumes: validResumes.length
+      }));
     } catch (err) {
       console.error('Error fetching resumes:', err);
       setError('Failed to load resumes');
@@ -543,7 +553,39 @@ const Dashboard = () => {
           </ActivityContainer>
         </Grid>
 
-        <Grid item xs={12}>
+        <Grid item xs={12} md={6}>
+          <ActivityContainer
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.4 }}
+          >
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333' }}>
+              Last 5 Days Submissions
+            </Typography>
+            {submissionsChartData.length > 0 ? (
+              <Box sx={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={submissionsChartData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="submissions" name="Submissions" fill="#2196F3" />
+                    <Bar dataKey="publicApplications" name="Public Applications" fill="#00BCD4" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+            ) : (
+              <NoData message="No submission data available" />
+            )}
+          </ActivityContainer>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
           <ActivityContainer
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -552,16 +594,15 @@ const Dashboard = () => {
             <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333' }}>
               Job Submissions Overview
             </Typography>
-            <TableContainer>
-              <Table>
+            <TableContainer sx={{ maxHeight: 350, overflow: 'auto' }}>
+              <Table stickyHeader>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Job Title</TableCell>
-                    <TableCell>Client</TableCell>
-                    <TableCell>Location</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">Submissions</TableCell>
-                    <TableCell align="right">Public Applications</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f5f5f5' }}>Job Title</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f5f5f5' }}>Client</TableCell>
+                    <TableCell sx={{ backgroundColor: '#f5f5f5' }}>Status</TableCell>
+                    <TableCell align="right" sx={{ backgroundColor: '#f5f5f5' }}>Submissions</TableCell>
+                    <TableCell align="right" sx={{ backgroundColor: '#f5f5f5' }}>Public Applications</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -576,7 +617,6 @@ const Dashboard = () => {
                     >
                       <TableCell>{job.title}</TableCell>
                       <TableCell>{job.client}</TableCell>
-                      <TableCell>{job.location}</TableCell>
                       <TableCell>
                         <StyledStatusChip
                           label={job.status}
@@ -595,7 +635,7 @@ const Dashboard = () => {
                       <TableCell align="right">
                         <Chip
                           label={job.publicApplicationsCount}
-                          color={job.publicApplicationsCount > 0 ? "secondary" : "default"}
+                          color={job.publicApplicationsCount > 0 ? "primary" : "default"}
                           size="small"
                           sx={{ minWidth: '60px' }}
                         />
