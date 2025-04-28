@@ -23,10 +23,8 @@ import {
   TableRow,
 } from '@mui/material';
 import {
-  People as PeopleIcon,
   Work as WorkIcon,
   Assignment as AssignmentIcon,
-  Upload as UploadIcon,
   LocationOn as LocationIcon,
   Business as BusinessIcon,
   CalendarToday as CalendarIcon,
@@ -36,7 +34,7 @@ import {
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import NoData from '../components/NoData';
 import { getRecruiters, getJobs, getSubmissions, getResumes, getPublicApplications } from '../services/api';
 
@@ -61,7 +59,7 @@ const GradientCard = styled(motion(Paper))(({ theme, color }) => ({
   justifyContent: 'space-between',
   transition: 'all 0.3s ease-in-out',
   position: 'relative',
-  overflow: 'hidden',
+  overflow: 'auto',
   '&::before': {
     content: '""',
     position: 'absolute',
@@ -85,7 +83,10 @@ const GradientCard = styled(motion(Paper))(({ theme, color }) => ({
 const ActivityContainer = styled(motion(Paper))(({ theme }) => ({
   borderRadius: theme.spacing(2),
   padding: theme.spacing(3),
-  height: '100%',
+  height: 'auto',
+  minHeight: '380px',
+  display: 'flex',
+  flexDirection: 'column',
   background: '#ffffff',
   boxShadow: '0 8px 32px rgba(0,0,0,0.06)',
   border: '1px solid rgba(231, 235, 240, 0.8)',
@@ -244,6 +245,17 @@ const Dashboard = () => {
     }
   };
 
+  // Calculate job status distribution for pie chart
+  const getJobStatusData = () => {
+    const statusCounts = {};
+    jobSubmissions.forEach(job => {
+      const status = job.status || 'Unknown';
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+    });
+    
+    return Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
+  };
+  
   const fetchRecentActivities = async () => {
     try {
       setLoading(true);
@@ -475,7 +487,7 @@ const Dashboard = () => {
               Recent Jobs
             </Typography>
             {recentJobs.slice(0, 3).length > 0 ? (
-              <List>
+              <List sx={{ maxHeight: '250px', overflow: 'auto' }}>
                 {recentJobs.slice(0, 3).map((job) => (
                   <ListItem key={job.id} sx={{
                     mb: 2,
@@ -483,6 +495,10 @@ const Dashboard = () => {
                     borderRadius: 2,
                     transition: 'all 0.3s ease',
                     border: '1px solid rgba(231, 235, 240, 0.8)',
+                    height: '72px',
+                    minHeight: '72px',
+                    maxHeight: '72px',
+                    overflow: 'hidden',
                     '&:hover': {
                       transform: 'translateX(10px)',
                       bgcolor: 'rgba(0, 0, 0, 0.03)',
@@ -493,8 +509,8 @@ const Dashboard = () => {
                       <WorkIcon color="primary" />
                     </ListItemIcon>
                     <ListItemText
-                      primary={job.title}
-                      secondary={job.subtitle}
+                      primary={<Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{job.title}</Typography>}
+                      secondary={<Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{job.subtitle}</Typography>}
                     />
                     <StyledStatusChip 
                       label={job.status} 
@@ -518,11 +534,12 @@ const Dashboard = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.5 }}
           >
-            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333' }}>
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               Recent Submissions
+              <Chip label="View All" color="primary" size="small" onClick={() => navigate('/submissions')} sx={{ cursor: 'pointer' }} />  
             </Typography>
             {recentSubmissions.slice(0, 3).length > 0 ? (
-              <List>
+              <List sx={{ maxHeight: '250px', overflow: 'auto' }}>
                 {recentSubmissions.slice(0, 3).map((submission) => (
                   <ListItem key={submission.id} sx={{
                     mb: 2,
@@ -530,6 +547,10 @@ const Dashboard = () => {
                     borderRadius: 2,
                     transition: 'all 0.3s ease',
                     border: '1px solid rgba(231, 235, 240, 0.8)',
+                    height: '72px',
+                    minHeight: '72px',
+                    maxHeight: '72px',
+                    overflow: 'hidden',
                     '&:hover': {
                       transform: 'translateX(10px)',
                       bgcolor: 'rgba(0, 0, 0, 0.03)',
@@ -540,8 +561,8 @@ const Dashboard = () => {
                       <AssignmentIcon color="primary" />
                     </ListItemIcon>
                     <ListItemText
-                      primary={submission.title}
-                      secondary={submission.subtitle}
+                      primary={<Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{submission.title}</Typography>}
+                      secondary={<Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{submission.subtitle}</Typography>}
                     />
                     <StyledChip label={submission.status} status={submission.status} />
                   </ListItem>
@@ -553,7 +574,7 @@ const Dashboard = () => {
           </ActivityContainer>
         </Grid>
 
-        <Grid item xs={12} md={6}>
+        {/* <Grid item xs={12} md={6}>
           <ActivityContainer
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -583,26 +604,168 @@ const Dashboard = () => {
               <NoData message="No submission data available" />
             )}
           </ActivityContainer>
+        </Grid> */}
+
+        <Grid item xs={12} md={12}>
+          <ActivityContainer
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.6 }}
+          >
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              Activity Trends
+              <Chip label="Last 5 Days" color="primary" variant="outlined" size="small" />  
+            </Typography>
+            
+            {submissionsChartData.length > 0 ? (
+              <Box sx={{ height: 300, width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={submissionsChartData}
+                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                        border: 'none'
+                      }} 
+                    />
+                    <Legend />
+                    <Area 
+                      type="monotone" 
+                      dataKey="submissions" 
+                      name="Submissions" 
+                      stroke="#2196F3" 
+                      fill="#2196F380" 
+                      activeDot={{ r: 8 }} 
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="publicApplications" 
+                      name="Public Applications" 
+                      stroke="#00BCD4" 
+                      fill="#00BCD480" 
+                      activeDot={{ r: 6 }} 
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Box>
+            ) : (
+              <NoData message="No activity data available" />
+            )}
+          </ActivityContainer>
         </Grid>
 
         <Grid item xs={12} md={6}>
           <ActivityContainer
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.4 }}
+            transition={{ duration: 0.3, delay: 0.7 }}
           >
-            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333' }}>
-              Job Submissions Overview
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              Job Status Distribution
+              <Chip label="View All Jobs" color="primary" size="small" onClick={() => navigate('/jobs')} sx={{ cursor: 'pointer' }} />
             </Typography>
-            <TableContainer sx={{ maxHeight: 350, overflow: 'auto' }}>
-              <Table stickyHeader>
+            
+            {jobSubmissions.length > 0 ? (
+              <Box sx={{ height: 300, width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={getJobStatusData()}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="value"
+                      nameKey="name"
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {getJobStatusData().map((entry, index) => {
+                        const COLORS = ['#2196F3', '#4CAF50', '#FF9800', '#F44336', '#9C27B0', '#00BCD4'];
+                        return <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />;
+                      })}
+                    </Pie>
+                    <Tooltip 
+                      formatter={(value, name) => [`${value} jobs`, name]}
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+                        border: 'none'
+                      }} 
+                    />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Box>
+            ) : (
+              <NoData message="No job status data available" />
+            )}
+          </ActivityContainer>
+        </Grid>
+        
+        <Grid item xs={12} md={6}>
+          <ActivityContainer
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.8 }}
+          >
+            <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: '#333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              Job Submissions Overview
+              <Chip label="View All Jobs" color="primary" size="small" onClick={() => navigate('/jobs')} sx={{ cursor: 'pointer' }} />
+            </Typography>
+            <TableContainer sx={{ maxHeight: 300, overflow: 'auto' }}>
+              <Table stickyHeader sx={{ tableLayout: 'fixed', width: '100%' }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ backgroundColor: '#f5f5f5' }}>Job Title</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f5f5f5' }}>Client</TableCell>
-                    <TableCell sx={{ backgroundColor: '#f5f5f5' }}>Status</TableCell>
-                    <TableCell align="right" sx={{ backgroundColor: '#f5f5f5' }}>Submissions</TableCell>
-                    <TableCell align="right" sx={{ backgroundColor: '#f5f5f5' }}>Public Applications</TableCell>
+                    <TableCell sx={{ 
+                      backgroundColor: '#f5f5f5', 
+                      width: '25%', 
+                      minWidth: '120px', 
+                      maxWidth: '150px',
+                      height: '56px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}>Job Title</TableCell>
+                    <TableCell sx={{ 
+                      backgroundColor: '#f5f5f5', 
+                      width: '20%', 
+                      minWidth: '100px', 
+                      maxWidth: '120px',
+                      height: '56px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}>Client</TableCell>
+                    <TableCell sx={{ 
+                      backgroundColor: '#f5f5f5', 
+                      width: '15%', 
+                      minWidth: '80px', 
+                      maxWidth: '100px',
+                      height: '56px'
+                    }}>Status</TableCell>
+                    <TableCell align="right" sx={{ 
+                      backgroundColor: '#f5f5f5', 
+                      width: '20%', 
+                      minWidth: '100px', 
+                      maxWidth: '120px',
+                      height: '56px'
+                    }}>Submissions</TableCell>
+                    <TableCell align="right" sx={{ 
+                      backgroundColor: '#f5f5f5', 
+                      width: '20%', 
+                      minWidth: '100px', 
+                      maxWidth: '120px',
+                      height: '56px'
+                    }}>Public Applications</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -610,21 +773,42 @@ const Dashboard = () => {
                     <TableRow
                       key={job.id}
                       sx={{
+                        height: '72px',
+                        minHeight: '72px',
+                        maxHeight: '72px',
                         '&:hover': {
                           backgroundColor: 'rgba(0, 0, 0, 0.03)',
                         },
                       }}
                     >
-                      <TableCell>{job.title}</TableCell>
-                      <TableCell>{job.client}</TableCell>
-                      <TableCell>
+                      <TableCell sx={{ 
+                        height: '72px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        <Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {job.title}
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={{ 
+                        height: '72px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        <Typography noWrap sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {job.client}
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={{ height: '72px' }}>
                         <StyledStatusChip
                           label={job.status}
                           status={job.status}
                           size="small"
                         />
                       </TableCell>
-                      <TableCell align="right">
+                      <TableCell align="right" sx={{ height: '72px' }}>
                         <Chip
                           label={job.submissionCount}
                           color={job.submissionCount > 0 ? "primary" : "default"}
@@ -632,7 +816,7 @@ const Dashboard = () => {
                           sx={{ minWidth: '60px' }}
                         />
                       </TableCell>
-                      <TableCell align="right">
+                      <TableCell align="right" sx={{ height: '72px' }}>
                         <Chip
                           label={job.publicApplicationsCount}
                           color={job.publicApplicationsCount > 0 ? "primary" : "default"}
